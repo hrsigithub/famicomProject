@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "famicomProject"
+name = "famicom_project"
 version = "0.1.0"
