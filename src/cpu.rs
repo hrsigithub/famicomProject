@@ -39,11 +39,12 @@ impl CPU {
 
     fn inx(&mut self) {
         // オーバーフロー対応
-        if self.register_x == 0xFF {
-            self.register_x = 0;
-        } else {
-            self.register_x += 1;
-        }
+        // if self.register_x == 0xFF {
+        //     self.register_x = 0;
+        // } else {
+        //     self.register_x += 1;
+        // }
+        self.register_x = self.register_x.wrapping_add(1);
 
         self.update_zero_and_negative_flags(self.register_x);
     }
