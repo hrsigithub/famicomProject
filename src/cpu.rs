@@ -15,6 +15,9 @@ pub struct CPU {
     // プログラム内の現在位置を追跡する
     // プログラム カウンター
     pub program_counter: u16,
+
+    // メモリー
+    memory: [u8; 0xFFFF]
 }
 
 impl CPU {
