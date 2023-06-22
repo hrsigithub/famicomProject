@@ -59,9 +59,9 @@ impl CPU {
     // すべてのレジスタの状態を復元し、0xFFFC に格納されている2バイトの値で
     // プログラム カウンタを初期化する必要があります
     pub fn reset(&mut self) {
-        self.register_a = 0;
-        self.register_x = 0;
-        self.status = 0;
+        // self.register_a = 0;
+        // self.register_x = 0;
+        // self.status = 0;
 
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
@@ -116,7 +116,6 @@ impl CPU {
     }
 
     pub fn run(&mut self) {
-
         loop {
             let opscode = self.mem_read(self.program_counter);
             self.program_counter += 1;
@@ -127,6 +126,7 @@ impl CPU {
                 // LDA (0xA9)オペコード
                 0xA9 => {
                     let param = self.mem_read(self.program_counter);
+                    self.program_counter += 1;
                     self.lda(param);
                 }
 
@@ -139,9 +139,7 @@ impl CPU {
                 // BRK(0x00)オペコード
                 0x00 => return,
 
-                _ => {
-                    todo!()
-                }
+                _ => todo!(),
             }
         }
     }
