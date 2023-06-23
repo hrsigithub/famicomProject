@@ -281,20 +281,21 @@ impl CPU {
     fn rol(&mut self, mode: &AddressingMode) {
         let (value, carry) = if mode == &AddressingMode::Accumulator {
             let (value, carry) = self.register_a.overflowing_mul(2);
-            self.register_a = value | self.status & FLAG_CARRY;
-            (value, carry)
+            self.register_a = value | (self.status & FLAG_CARRY);
+            (self.register_a, carry)
         } else {
             let addr = self.get_operand_address(mode);
             let value = self.mem_read(addr);
             let (value, carry) = value.overflowing_mul(2);
-            self.mem_write(addr, value | self.status & FLAG_CARRY);
+            let value = value | (self.status & FLAG_CARRY);
+            self.mem_write(addr, value);
             (value, carry)
         };
 
         self.status = if carry {
             self.status | FLAG_CARRY
         } else {
-            self.status | !FLAG_CARRY
+            self.status & !FLAG_CARRY
         };
 
         self.update_zero_and_negative_flags(value);
@@ -545,7 +546,7 @@ mod test {
         cpu
     }
 
-    fn assert_status(cpu: CPU, flags: u8) {
+    fn assert_status(cpu: &CPU, flags: u8) {
         assert_eq!(cpu.status, flags)
     }
 
@@ -766,7 +767,7 @@ mod test {
 
         assert_eq!(cpu.register_a, 0x00);
         // assert_eq!(cpu.status, 0x03);
-        assert_status(cpu, FLAG_CARRY | FLAG_ZERO);
+        assert_status(&cpu, FLAG_CARRY | FLAG_ZERO);
     }
 
     #[test]
@@ -779,7 +780,7 @@ mod test {
 
         assert_eq!(cpu.register_a, 0x8F);
         // assert_eq!(cpu.status, 0xC0);
-        assert_status(cpu, FLAG_NEGATIVE | FLAG_OVERFLOW);
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_OVERFLOW);
     }
 
     #[test]
@@ -914,7 +915,7 @@ mod test {
             cpu.register_a = 0x0A;
         });
         assert_eq!(cpu.register_a, 0x08);
-        assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     #[test]
@@ -923,7 +924,7 @@ mod test {
             cpu.register_a = 0x0A;
         });
         assert_eq!(cpu.register_a, 0x06);
-        assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     #[test]
@@ -932,7 +933,7 @@ mod test {
             cpu.register_a = 0x0A;
         });
         assert_eq!(cpu.register_a, 0x0E);
-        assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     // ASL
@@ -959,7 +960,7 @@ mod test {
             cpu.register_a = 0x81;
         });
         assert_eq!(cpu.register_a, 0x02);
-        assert_status(cpu, FLAG_CARRY);
+        assert_status(&cpu, FLAG_CARRY);
     }
 
     #[test]
@@ -968,7 +969,7 @@ mod test {
             cpu.mem_write(0x0001, 0x81);
         });
         assert_eq!(cpu.mem_read(0x0001), 0x02);
-        assert_status(cpu, FLAG_CARRY);
+        assert_status(&cpu, FLAG_CARRY);
     }
 
     // LSR
@@ -978,7 +979,7 @@ mod test {
             cpu.register_a = 0x02;
         });
         assert_eq!(cpu.register_a, 0x01);
-        assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     #[test]
@@ -996,7 +997,7 @@ mod test {
             cpu.register_a = 0x03;
         });
         assert_eq!(cpu.register_a, 0x01);
-        assert_status(cpu, FLAG_CARRY);
+        assert_status(&cpu, FLAG_CARRY);
     }
 
     #[test]
@@ -1005,7 +1006,7 @@ mod test {
             cpu.mem_write(0x0001, 0x03);
         });
         assert_eq!(cpu.mem_read(0x0001), 0x01);
-        // assert_status(cpu, FLAG_CARRY);
+        // assert_status(&cpu, FLAG_CARRY);
     }
 
     // ROL
@@ -1015,7 +1016,7 @@ mod test {
             cpu.register_a = 0x03;
         });
         assert_eq!(cpu.register_a, 0x03 * 2);
-        // assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     #[test]
@@ -1024,7 +1025,7 @@ mod test {
             cpu.mem_write(0x0001, 0x03);
         });
         assert_eq!(cpu.mem_read(0x0001), 0x03 * 2);
-        // assert_status(cpu, FLAG_CARRY);
+        assert_status(&cpu, 0);
     }
     #[test]
     fn test_rol_a_with_carry() {
@@ -1033,7 +1034,7 @@ mod test {
             cpu.status = FLAG_CARRY;
         });
         assert_eq!(cpu.register_a, 0x03 * 2 + 1);
-        // assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     #[test]
@@ -1042,7 +1043,27 @@ mod test {
             cpu.mem_write(0x0001, 0x03);
             cpu.status = FLAG_CARRY;
         });
-        assert_eq!(cpu.mem_read(0x0001),  0x03 * 2 + 1);
-        // assert_status(cpu, FLAG_CARRY);
+        assert_eq!(cpu.mem_read(0x0001), 0x03 * 2 + 1);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_rol_a_zero_with_carry() {
+        let cpu = run(vec![0x2A, 0x00], |cpu| {
+            cpu.register_a = 0x00;
+            cpu.status = FLAG_CARRY;
+        });
+        assert_eq!(cpu.register_a, 0x01);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_rol_zero_page_zero_with_carry() {
+        let cpu = run(vec![0x26, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x00);
+            cpu.status = FLAG_CARRY;
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x01);
+        // assert_status(cpu, 0);
     }
 }
