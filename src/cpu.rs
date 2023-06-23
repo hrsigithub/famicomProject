@@ -2,9 +2,10 @@
 
 // LDA #$c0 ; a9 c0
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum AddressingMode {
+    Accumulator,
     Immediate,
     ZeroPage,
     ZeroPage_X,
@@ -66,6 +67,10 @@ impl CPU {
         println!("program_counter: {:?} ", self.program_counter);
 
         match mode {
+            AddressingMode::Accumulator => {
+                panic!("mode {:?} is not supported", mode);
+            }
+
             // LDA #$44
             AddressingMode::Immediate => self.program_counter,
             AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
@@ -251,6 +256,28 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_a);
     }
 
+    fn asl(&mut self, mode: &AddressingMode) {
+        let (value, carry) = if mode == &AddressingMode::Accumulator {
+            let (value, carry) = self.register_a.overflowing_mul(2);
+            self.register_a = value;
+            (value, carry)
+        } else {
+            let addr = self.get_operand_address(mode);
+            let value = self.mem_read(addr);
+            let (value, carry) = value.overflowing_mul(2);
+            self.mem_write(addr, value);
+            (value, carry)
+        };
+
+        self.status = if carry {
+            self.status | FLAG_CARRY
+        } else {
+            self.status | !FLAG_CARRY
+        };
+
+        self.update_zero_and_negative_flags(value);
+    }
+
     fn sbc(&mut self, mode: &AddressingMode) {
         // A-M-(1-C)
         let addr = self.get_operand_address(mode);
@@ -314,6 +341,16 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // ASL
+                0x06 => {
+                    self.asl(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
+
+                0x0A => {
+                    self.asl(&AddressingMode::Accumulator);
+                }
+
                 // ADC
                 0x69 => {
                     self.adc(&AddressingMode::Immediate);
@@ -447,7 +484,7 @@ mod test {
         cpu
     }
 
-    fn assert_status(cpu: &CPU, flags: u8) {
+    fn assert_status(cpu: CPU, flags: u8) {
         assert_eq!(cpu.status, flags)
     }
 
@@ -668,7 +705,7 @@ mod test {
 
         assert_eq!(cpu.register_a, 0x00);
         // assert_eq!(cpu.status, 0x03);
-        assert_status(&cpu, FLAG_CARRY | FLAG_ZERO);
+        assert_status(cpu, FLAG_CARRY | FLAG_ZERO);
     }
 
     #[test]
@@ -681,7 +718,7 @@ mod test {
 
         assert_eq!(cpu.register_a, 0x8F);
         // assert_eq!(cpu.status, 0xC0);
-        assert_status(&cpu, FLAG_NEGATIVE | FLAG_OVERFLOW);
+        assert_status(cpu, FLAG_NEGATIVE | FLAG_OVERFLOW);
     }
 
     #[test]
@@ -816,7 +853,7 @@ mod test {
             cpu.register_a = 0x0A;
         });
         assert_eq!(cpu.register_a, 0x08);
-        assert_status(&cpu, 0);
+        assert_status(cpu, 0);
     }
 
     #[test]
@@ -825,7 +862,7 @@ mod test {
             cpu.register_a = 0x0A;
         });
         assert_eq!(cpu.register_a, 0x06);
-        assert_status(&cpu, 0);
+        assert_status(cpu, 0);
     }
 
     #[test]
@@ -834,8 +871,42 @@ mod test {
             cpu.register_a = 0x0A;
         });
         assert_eq!(cpu.register_a, 0x0E);
-        assert_status(&cpu, 0);
+        assert_status(cpu, 0);
     }
 
+    // ASL
+    #[test]
+    fn test_asl_a() {
+        let cpu = run(vec![0x0A, 0x00], |cpu| {
+            cpu.register_a = 0x03;
+        });
+        assert_eq!(cpu.register_a, 0x03 * 2);
+        // assert_status(cpu, 0);
+    }
 
+    #[test]
+    fn test_asl_zero_page() {
+        let cpu = run(vec![0x06, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x03);
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x03 * 2);
+        // assert_status(cpu, FLAG_CARRY);
+    }
+    #[test]
+    fn test_asl_a_overflow() {
+        let cpu = run(vec![0x0A, 0x00], |cpu| {
+            cpu.register_a = 0x81;
+        });
+        assert_eq!(cpu.register_a, 0x02);
+        assert_status(cpu, FLAG_CARRY);
+    }
+
+    #[test]
+    fn test_asl_zero_page_overflow() {
+        let cpu = run(vec![0x06, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x81);
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x02);
+        assert_status(cpu, FLAG_CARRY);
+    }
 }
