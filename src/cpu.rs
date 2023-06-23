@@ -15,6 +15,7 @@ pub enum AddressingMode {
     Absolute_Y,
     Indirect_X,
     Indirect_Y,
+    Relative,
     NoneAddressing,
 }
 
@@ -117,6 +118,13 @@ impl CPU {
                 let deref = deref_base.wrapping_add(self.register_y as u16);
                 deref
             }
+
+            // BCC
+            AddressingMode::Relative => {
+                let base = self.mem_read(self.program_counter);
+                return (base as i8) as u16 + self.program_counter;
+            }
+
             AddressingMode::NoneAddressing => {
                 panic!("mode {:?} is not supported", mode);
             }
@@ -176,15 +184,6 @@ impl CPU {
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8) {
-        // [Zero Flag 1ビット目] Aが0の時に設定
-        // if result == 0 {
-        //     // 1bit目を立てる。
-        //     self.status = self.status | FLAG_ZERO;
-        // } else {
-        //     // 1bit目をクリア
-        //     self.status = self.status & !FLAG_ZERO;
-        // }
-
         self.status = if result == 0 {
             self.status | FLAG_ZERO
         } else {
@@ -198,6 +197,22 @@ impl CPU {
         } else {
             // ビット7をクリア
             self.status = self.status & !FLAG_NEGATIVE;
+        }
+    }
+
+    fn bcc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+
+        if self.status & FLAG_CARRY == 0 {
+            self.program_counter = addr;
+        }
+    }
+
+    fn bcs(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+
+        if self.status & FLAG_CARRY != 0 {
+            self.program_counter = addr;
         }
     }
 
@@ -411,6 +426,18 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // BCC
+                0x90 => {
+                    self.bcc(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
+                // BCS
+                0xB0 => {
+                    self.bcs(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
                 // ROR
                 0x6A => {
                     self.ror(&AddressingMode::Accumulator);
@@ -1028,6 +1055,15 @@ mod test {
     }
 
     #[test]
+    fn test_lsr_zero_page_zero_flag() {
+        let cpu = run(vec![0x46, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x01);
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x00);
+        assert_status(&cpu, FLAG_ZERO | FLAG_CARRY);
+    }
+
+    #[test]
     fn test_lsr_a_occur_carry() {
         let cpu = run(vec![0x4A, 0x00], |cpu| {
             cpu.register_a = 0x03;
@@ -1100,7 +1136,7 @@ mod test {
             cpu.status = FLAG_CARRY;
         });
         assert_eq!(cpu.mem_read(0x0001), 0x01);
-        // assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     // ROR
@@ -1137,7 +1173,7 @@ mod test {
             cpu.mem_write(0x0001, 0x03);
         });
         assert_eq!(cpu.mem_read(0x0001), 0x01);
-        // assert_status(&cpu, FLAG_CARRY);
+        assert_status(&cpu, FLAG_CARRY);
     }
 
     #[test]
@@ -1178,5 +1214,49 @@ mod test {
         });
         assert_eq!(cpu.mem_read(0x0001), 0x80);
         assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // BCC
+    #[test]
+    fn test_bcc() {
+        let cpu = run(vec![0x90, 0x02, 0x00, 0x00, 0xE8, 0x00], |_| {});
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_bcc_with_carry() {
+        let cpu = run(vec![0x90, 0x02, 0x00, 0x00, 0xE8, 0x00], |cpu| {
+            cpu.status = FLAG_CARRY;
+        });
+
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+
+        assert_status(&cpu, FLAG_CARRY);
+    }
+
+    // BCS
+    #[test]
+    fn test_bcs() {
+        let cpu = run(vec![0xB0, 0x02, 0x00, 0x00, 0xE8, 0x00], |_| {});
+
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_bcs_with_carry() {
+        let cpu = run(vec![0xB0, 0x02, 0x00, 0x00, 0xE8, 0x00], |cpu| {
+            cpu.status = FLAG_CARRY;
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, FLAG_CARRY);
     }
 }
