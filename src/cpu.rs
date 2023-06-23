@@ -272,7 +272,7 @@ impl CPU {
         self.status = if carry {
             self.status | FLAG_CARRY
         } else {
-            self.status | !FLAG_CARRY
+            self.status & !FLAG_CARRY
         };
 
         self.update_zero_and_negative_flags(value);
@@ -309,13 +309,17 @@ impl CPU {
         } else {
             let addr = self.get_operand_address(mode);
             let value = self.mem_read(addr);
-            let carry = value & 0x00;
-            self.mem_write(addr, value / 2);
-
+            let carry = value & 0x01;
+            let value = value / 2;
+            self.mem_write(addr, value);
             (value, carry)
         };
 
-        self.status = (self.status & !FLAG_CARRY) | carry;
+        self.status = if carry == 1 {
+            self.status | FLAG_CARRY
+        } else {
+            self.status & !FLAG_CARRY
+        };
 
         self.update_zero_and_negative_flags(value);
     }
@@ -800,7 +804,6 @@ mod test {
         cpu.run();
 
         assert_eq!(cpu.register_a, 0x00);
-        // assert_eq!(cpu.status, 0x03);
         assert_status(&cpu, FLAG_CARRY | FLAG_ZERO);
     }
 
@@ -813,7 +816,6 @@ mod test {
         cpu.run();
 
         assert_eq!(cpu.register_a, 0x8F);
-        // assert_eq!(cpu.status, 0xC0);
         assert_status(&cpu, FLAG_NEGATIVE | FLAG_OVERFLOW);
     }
 
@@ -977,7 +979,7 @@ mod test {
             cpu.register_a = 0x03;
         });
         assert_eq!(cpu.register_a, 0x03 * 2);
-        // assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     #[test]
@@ -986,7 +988,7 @@ mod test {
             cpu.mem_write(0x0001, 0x03);
         });
         assert_eq!(cpu.mem_read(0x0001), 0x03 * 2);
-        // assert_status(cpu, FLAG_CARRY);
+        assert_status(&cpu, 0);
     }
     #[test]
     fn test_asl_a_carry() {
@@ -1040,7 +1042,7 @@ mod test {
             cpu.mem_write(0x0001, 0x03);
         });
         assert_eq!(cpu.mem_read(0x0001), 0x01);
-        // assert_status(&cpu, FLAG_CARRY);
+        assert_status(&cpu, FLAG_CARRY);
     }
 
     // ROL
