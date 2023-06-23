@@ -26,6 +26,8 @@ const FLAG_BREAK2: u8 = 1 << 5; // 5 は未使用。
 const FLAG_OVERFLOW: u8 = 1 << 6;
 const FLAG_NEGATIVE: u8 = 1 << 7;
 
+const SIGN_BIT: u8 = 1 << 7;
+
 #[derive(Debug)]
 pub struct CPU {
     // アキュムレータ
@@ -56,17 +58,6 @@ impl CPU {
             program_counter: 0,
             memory: [0x00; 0x10000],
         }
-    }
-
-    fn dump(&self) {
-        // ターミナルのバッファを拡張する必要あり。
-        for (index, byte) in self.memory.iter().enumerate() {
-            print!("{:02X} ", byte);
-            if (index + 1) % 20 == 0 {
-                println!();
-            }
-        }
-        println!();
     }
 
     // メモリアドレッシングモード
@@ -203,8 +194,6 @@ impl CPU {
             // ビット7をクリア
             self.status = self.status & !FLAG_NEGATIVE;
         }
-
-        
     }
 
     fn adc(&mut self, mode: &AddressingMode) {
@@ -215,7 +204,8 @@ impl CPU {
         let (rhs, carry_flag1) = value.overflowing_add(carry);
         let (n, carry_flag2) = self.register_a.overflowing_add(rhs);
 
-        let overflow = (self.register_a & 0x80) == (value & 0x80) && (value & 0x80) != (n & 0x80);
+        let overflow = (self.register_a & SIGN_BIT) == (value & SIGN_BIT)
+            && (value & SIGN_BIT) != (n & SIGN_BIT);
 
         self.register_a = n;
 
@@ -234,6 +224,33 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_a);
     }
 
+    fn and(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.register_a = self.register_a & value;
+
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    fn eor(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.register_a = self.register_a ^ value;
+
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    fn ora(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.register_a = self.register_a | value;
+
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
     fn sbc(&mut self, mode: &AddressingMode) {
         // A-M-(1-C)
         let addr = self.get_operand_address(mode);
@@ -243,8 +260,8 @@ impl CPU {
         let (v1, carry_flag1) = self.register_a.overflowing_sub(value);
         let (n, carry_flag2) = v1.overflowing_sub(1 - carry);
 
-        let overflow =
-            (self.register_a & 0x80) != (value & 0x80) && (self.register_a & 0x80) != (n & 0x80);
+        let overflow = (self.register_a & SIGN_BIT) != (value & SIGN_BIT)
+            && (self.register_a & SIGN_BIT) != (n & SIGN_BIT);
 
         self.register_a = n;
 
@@ -300,6 +317,24 @@ impl CPU {
                 // ADC
                 0x69 => {
                     self.adc(&AddressingMode::Immediate);
+                    self.program_counter += 1;
+                }
+
+                // AND
+                0x29 => {
+                    self.and(&AddressingMode::Immediate);
+                    self.program_counter += 1;
+                }
+
+                // EOR
+                0x49 => {
+                    self.eor(&AddressingMode::Immediate);
+                    self.program_counter += 1;
+                }
+
+                // ORA
+                0x09 => {
+                    self.ora(&AddressingMode::Immediate);
                     self.program_counter += 1;
                 }
 
@@ -400,6 +435,33 @@ impl CPU {
 mod test {
     use super::*;
 
+    fn run<F>(program: Vec<u8>, f: F) -> CPU
+    where
+        F: Fn(&mut CPU),
+    {
+        let mut cpu = CPU::new();
+        cpu.load(program);
+        cpu.reset();
+        f(&mut cpu);
+        cpu.run();
+        cpu
+    }
+
+    fn assert_status(cpu: &CPU, flags: u8) {
+        assert_eq!(cpu.status, flags)
+    }
+
+    fn dump(cpu: &CPU) {
+        // ターミナルのバッファを拡張する必要あり。
+        for (index, byte) in cpu.memory.iter().enumerate() {
+            print!("{:02X} ", byte);
+            if (index + 1) % 20 == 0 {
+                println!();
+            }
+        }
+        println!();
+    }
+
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let mut cpu = CPU::new();
@@ -428,20 +490,28 @@ mod test {
 
     #[test]
     fn test_0xaa_tax_move_a_to_x() {
-        let mut cpu = CPU::new();
-        cpu.load(vec![0xaa, 0x00]);
-        cpu.reset();
+        // let mut cpu = CPU::new();
+        // cpu.load(vec![0xaa, 0x00]);
+        // cpu.reset();
 
-        cpu.register_a = 10;
-        cpu.run();
+        // cpu.register_a = 10;
+        // cpu.run();
+        // assert_eq!(cpu.register_x, 10);
+
+        let cpu = run(vec![0xaa, 0x00], |cpu| {
+            cpu.register_a = 10;
+        });
         assert_eq!(cpu.register_x, 10);
     }
 
     #[test]
     fn test_5_ops_working_together() {
-        let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
+        // let mut cpu = CPU::new();
+        // cpu.load_and_run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
 
+        // assert_eq!(cpu.register_x, 0xc1);
+
+        let cpu = run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00], |_| {});
         assert_eq!(cpu.register_x, 0xc1);
     }
 
@@ -547,10 +617,8 @@ mod test {
     #[test]
     fn test_memory() {
         let mut cpu = CPU::new();
-
         cpu.mem_write(0x007, 0x06);
-        cpu.dump();
-
+        dump(&cpu);
         assert_eq!(cpu.mem_read(0x007), 0x06);
     }
 
@@ -599,7 +667,8 @@ mod test {
         cpu.run();
 
         assert_eq!(cpu.register_a, 0x00);
-        assert_eq!(cpu.status, 0x03);
+        // assert_eq!(cpu.status, 0x03);
+        assert_status(&cpu, FLAG_CARRY | FLAG_ZERO);
     }
 
     #[test]
@@ -611,7 +680,8 @@ mod test {
         cpu.run();
 
         assert_eq!(cpu.register_a, 0x8F);
-        assert_eq!(cpu.status, 0xC0);
+        // assert_eq!(cpu.status, 0xC0);
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_OVERFLOW);
     }
 
     #[test]
@@ -738,4 +808,34 @@ mod test {
         assert_eq!(cpu.register_a, 0xFF);
         assert_eq!(cpu.status, 0x80);
     }
+
+    //
+    #[test]
+    fn test_and() {
+        let cpu = run(vec![0x29, 0x0C, 0x00], |cpu| {
+            cpu.register_a = 0x0A;
+        });
+        assert_eq!(cpu.register_a, 0x08);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_eor() {
+        let cpu = run(vec![0x49, 0x0C, 0x00], |cpu| {
+            cpu.register_a = 0x0A;
+        });
+        assert_eq!(cpu.register_a, 0x06);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_ora() {
+        let cpu = run(vec![0x09, 0x0C, 0x00], |cpu| {
+            cpu.register_a = 0x0A;
+        });
+        assert_eq!(cpu.register_a, 0x0E);
+        assert_status(&cpu, 0);
+    }
+
+
 }
