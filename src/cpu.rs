@@ -320,6 +320,30 @@ impl CPU {
         self.update_zero_and_negative_flags(value);
     }
 
+    fn ror(&mut self, mode: &AddressingMode) {
+        let (value, carry) = if mode == &AddressingMode::Accumulator {
+            let carry = self.register_a & 0x01;
+            self.register_a = self.register_a / 2;
+            self.register_a = self.register_a | ((self.status & FLAG_CARRY) << 7);
+            (self.register_a, carry)
+        } else {
+            let addr = self.get_operand_address(mode);
+            let value = self.mem_read(addr);
+            let carry = value & 0x01;
+            let value = value / 2;
+            let value = value | ((self.status & FLAG_CARRY) << 7);
+            self.mem_write(addr, value);
+            (value, carry)
+        };
+
+        self.status = if carry == 1 {
+            self.status | FLAG_CARRY
+        } else {
+            self.status & !FLAG_CARRY
+        };
+        self.update_zero_and_negative_flags(value);
+    }
+
     fn sbc(&mut self, mode: &AddressingMode) {
         // A-M-(1-C)
         let addr = self.get_operand_address(mode);
@@ -383,6 +407,16 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // ROR
+                0x6A => {
+                    self.ror(&AddressingMode::Accumulator);
+                }
+
+                0x66 => {
+                    self.ror(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
+
                 // ROL
                 0x2A => {
                     self.rol(&AddressingMode::Accumulator);
@@ -988,7 +1022,7 @@ mod test {
             cpu.mem_write(0x0001, 0x02);
         });
         assert_eq!(cpu.mem_read(0x0001), 0x01);
-        // assert_status(cpu, 0);
+        assert_status(&cpu, 0);
     }
 
     #[test]
@@ -1065,5 +1099,82 @@ mod test {
         });
         assert_eq!(cpu.mem_read(0x0001), 0x01);
         // assert_status(cpu, 0);
+    }
+
+    // ROR
+    #[test]
+    fn test_ror_a() {
+        let cpu = run(vec![0x6A, 0x00], |cpu| {
+            cpu.register_a = 0x02;
+        });
+        assert_eq!(cpu.register_a, 0x01);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_ror_zero_page() {
+        let cpu = run(vec![0x66, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x02);
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x01);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_ror_a_occur_carry() {
+        let cpu = run(vec![0x6A, 0x00], |cpu| {
+            cpu.register_a = 0x03;
+        });
+        assert_eq!(cpu.register_a, 0x01);
+        assert_status(&cpu, FLAG_CARRY);
+    }
+
+    #[test]
+    fn test_ror_zero_page_occur_carry() {
+        let cpu = run(vec![0x66, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x03);
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x01);
+        // assert_status(&cpu, FLAG_CARRY);
+    }
+
+    #[test]
+    fn test_ror_a_with_carry() {
+        let cpu = run(vec![0x6A, 0x00], |cpu| {
+            cpu.register_a = 0x03;
+            cpu.status = FLAG_CARRY;
+        });
+        assert_eq!(cpu.register_a, 0x81);
+        assert_status(&cpu, FLAG_CARRY | FLAG_NEGATIVE);
+    }
+
+    #[test]
+    fn test_ror_zero_page_with_carry() {
+        let cpu = run(vec![0x66, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x03);
+            cpu.status = FLAG_CARRY;
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x81);
+        assert_status(&cpu, FLAG_CARRY | FLAG_NEGATIVE);
+    }
+
+    #[test]
+    fn test_ror_a_zero_with_carry() {
+        let cpu = run(vec![0x6A, 0x00], |cpu| {
+            cpu.register_a = 0x00;
+            cpu.status = FLAG_CARRY;
+        });
+        assert_eq!(cpu.register_a, 0x80);
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    #[test]
+    fn test_ror_zero_page_zero_with_carry() {
+        let cpu = run(vec![0x66, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x00);
+            cpu.status = FLAG_CARRY;
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x80);
+        assert_status(&cpu, FLAG_NEGATIVE);
     }
 }
