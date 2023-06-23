@@ -17,6 +17,7 @@ pub enum AddressingMode {
     NoneAddressing,
 }
 
+#[derive(Debug)]
 pub struct CPU {
     // アキュムレータ
     pub register_a: u8, // 1byte
@@ -33,7 +34,7 @@ pub struct CPU {
     pub program_counter: u16, // 2Byte
 
     // メモリー
-    memory: [u8; 0x10000],
+    pub memory: [u8; 0x10000],
 }
 
 impl CPU {
@@ -46,6 +47,17 @@ impl CPU {
             program_counter: 0,
             memory: [0x00; 0x10000],
         }
+    }
+
+    fn dump(&self) {
+        // ターミナルのバッファを拡張する必要あり。
+        for (index, byte) in self.memory.iter().enumerate() {
+            print!("{:02X} ", byte);
+            if (index + 1) % 20 == 0 {
+                println!();
+            }
+        }
+        println!();
     }
 
     // メモリアドレッシングモード
@@ -142,10 +154,20 @@ impl CPU {
     }
 
     // 0x8000 から、カトリッジのデータをロード
-    // プログラムを PRG ROM 空間にロードし、コードへの参照を 0xFFFC メモリ セルに保存する必要があります。
+    // プログラムを PRG ROM 空間にロードし、コードへの参照を 0xFFFC メモリ セルに保存する必要がある。
     pub fn load(&mut self, program: Vec<u8>) {
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
         self.mem_write_u16(0xFFFC, 0x8000);
+    }
+
+    pub fn memory_print(&self) {
+        for (index, byte) in self.memory.iter().enumerate() {
+            print!("{:02X} ", byte);
+            if (index + 1) % 25 == 0 {
+                println!();
+            }
+        }
+        println!();
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8) {
@@ -166,6 +188,33 @@ impl CPU {
             // ビット7をクリア
             self.status = self.status & 0b0111_1111;
         }
+    }
+
+    fn adc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        let carry = self.status & 0x01;
+        let (rhs, carry_flag1) = value.overflowing_add(carry);
+        let (n, carry_flag2) = self.register_a.overflowing_add(rhs);
+
+        let overflow = (self.register_a & 0x80) == (value & 0x80) && (value & 0x80) != (n & 0x80);
+
+        self.register_a = n;
+
+        self.status = if carry_flag1 || carry_flag2 {
+            self.status | 0b0000_0001
+        } else {
+            self.status & 0xFE
+        };
+
+        self.status = if overflow {
+            self.status | 0x40
+        } else {
+            self.status & 0xBF
+        };
+
+        self.update_zero_and_negative_flags(self.register_a);
     }
 
     fn lda(&mut self, mode: &AddressingMode) {
@@ -202,6 +251,12 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // ADC
+                0x69 => {
+                    self.adc(&AddressingMode::Immediate);
+                    self.program_counter += 1;
+                }
+
                 // LDA (0xA9)オペコード
                 0xA9 => {
                     self.lda(&AddressingMode::Immediate);
@@ -298,9 +353,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.load_and_run(vec![0xa9, 0x05, 0x00]);
 
-        // Aが0x05 に変わってるはずよ。
         assert_eq!(cpu.register_a, 0x05);
-
         assert!(cpu.status & 0b0000_0010 == 0b0000_0000);
         assert!(cpu.status & 0b1000_0000 == 0b0000_0000);
     }
@@ -328,7 +381,6 @@ mod test {
         cpu.reset();
 
         cpu.register_a = 10;
-        // cpu.load_and_run(vec![0xaa, 0x00]);
         cpu.run();
         assert_eq!(cpu.register_x, 10);
     }
@@ -441,6 +493,16 @@ mod test {
     }
 
     #[test]
+    fn test_memory() {
+        let mut cpu = CPU::new();
+
+        cpu.mem_write(0x007, 0x06);
+        cpu.dump();
+
+        assert_eq!(cpu.mem_read(0x007), 0x06);
+    }
+
+    #[test]
     fn test_sta_from_memory() {
         let mut cpu = CPU::new();
         cpu.load(vec![0x85, 0x10, 0x00]);
@@ -451,5 +513,102 @@ mod test {
         assert_eq!(cpu.mem_read(0x10), 0xBA);
     }
 
+    #[test]
+    fn test_adc_no_carry() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x10, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x20;
+        cpu.run();
 
+        assert_eq!(cpu.register_a, 0x30);
+        assert_eq!(cpu.status, 0x00);
+    }
+
+    #[test]
+    fn test_adc_has_carry() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x10, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x20;
+        cpu.status = 0b0000_0001;
+        cpu.run();
+
+        assert_eq!(cpu.register_a, 0x31);
+        assert_eq!(cpu.status, 0x00);
+    }
+
+    #[test]
+    fn test_adc_occur_carry() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x01, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0xFF;
+        cpu.run();
+
+        assert_eq!(cpu.register_a, 0x00);
+        assert_eq!(cpu.status, 0x03);
+    }
+
+    #[test]
+    fn test_adc_occur_overflow_plus() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x10, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x7F;
+        cpu.run();
+
+        assert_eq!(cpu.register_a, 0x8F);
+        assert_eq!(cpu.status, 0xC0);
+    }
+
+    #[test]
+    fn test_adc_occur_overflow_plus_with_carry() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x6F, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x10;
+        cpu.status = 0x01;
+        cpu.run();
+
+        assert_eq!(cpu.register_a, 0x80);
+        assert_eq!(cpu.status, 0xC0);
+    }
+
+    #[test]
+    fn test_adc_occur_overflow_minus() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x81, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x81;
+        cpu.run();
+
+        assert_eq!(cpu.register_a, 0x02);
+        assert_eq!(cpu.status, 0x41);
+    }
+
+    #[test]
+    fn test_adc_occur_overflow_minus_carry() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x80, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x80;
+        cpu.status = 0x01;
+        cpu.run();
+
+        assert_eq!(cpu.register_a, 0x01);
+        assert_eq!(cpu.status, 0x41);
+    }
+
+    #[test]
+    fn test_adc_occur_no_overflow() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x7F, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x82;
+        cpu.run();
+
+        assert_eq!(cpu.register_a, 0x01);
+        assert_eq!(cpu.status, 0x01);
+    }
 }
