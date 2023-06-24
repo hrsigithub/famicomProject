@@ -222,6 +222,37 @@ impl CPU {
     }
 
     ///////////////
+    fn cpy(&mut self, mode: &AddressingMode) {
+        self._cmp(self.register_y, mode)
+    }
+
+    fn cpx(&mut self, mode: &AddressingMode) {
+        self._cmp(self.register_x, mode)
+    }
+
+    fn cmp(&mut self, mode: &AddressingMode) {
+        self._cmp(self.register_a, mode)
+    }
+
+    fn _cmp(&mut self, target: u8, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        if target >= value {
+            self.sec(&AddressingMode::Implied);
+        } else {
+            self.clc(&AddressingMode::Implied);
+        }
+
+        let (value, _) = target.overflowing_sub(value);
+
+        self.update_zero_and_negative_flags(value);
+    }
+
+    fn clv(&mut self, mode: &AddressingMode) {
+        self.status = self.status & !FLAG_OVERFLOW
+    }
+
     fn sei(&mut self, mode: &AddressingMode) {
         self.status = self.status | FLAG_INTERRUPT
     }
@@ -511,6 +542,29 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+
+                // CPY
+                0xC0 => {
+                    self.cpy(&AddressingMode::Immediate);
+                    self.program_counter += 1;
+                }
+
+                // CPX
+                0xE0 => {
+                    self.cpx(&AddressingMode::Immediate);
+                    self.program_counter += 1;
+                }
+
+                // CMP
+                0xC9 => {
+                    self.cmp(&AddressingMode::Immediate);
+                    self.program_counter += 1;
+                }
+
+                // CLV
+                0xB8 => {
+                    self.clv(&AddressingMode::Implied);
+                }
 
                 // SEI
                 0x78 => {
@@ -1654,6 +1708,62 @@ mod test {
         assert_status(&cpu, FLAG_NEGATIVE | FLAG_INTERRUPT);
     }
 
+    // CLV
+    #[test]
+    fn test_clv() {
+        let cpu = run(vec![0xB8, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE | FLAG_DECIMAL | FLAG_INTERRUPT | FLAG_OVERFLOW;
+        });
 
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_DECIMAL | FLAG_INTERRUPT);
+    }
+
+    // CMP
+    #[test]
+    fn test_cmp() {
+        let cpu = run(vec![0xC9, 0x01], |cpu| {
+            cpu.register_a = 0x02;
+        });
+
+        assert_status(&cpu, FLAG_CARRY);
+    }
+
+    #[test]
+    fn test_cmp_eq() {
+        let cpu = run(vec![0xC9, 0x02], |cpu| {
+            cpu.register_a = 0x02;
+        });
+
+        assert_status(&cpu, FLAG_CARRY | FLAG_ZERO);
+    }
+
+    #[test]
+    fn test_cmp_negative() {
+        let cpu = run(vec![0xC9, 0x03], |cpu| {
+            cpu.register_a = 0x02;
+        });
+
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // CPX
+    #[test]
+    fn test_cpx() {
+        let cpu = run(vec![0xE0, 0x01], |cpu| {
+            cpu.register_x = 0x02;
+        });
+
+        assert_status(&cpu, FLAG_CARRY);
+    }
+
+    // CPY
+    #[test]
+    fn test_cpy() {
+        let cpu = run(vec![0xC0, 0x01], |cpu| {
+            cpu.register_y = 0x02;
+        });
+
+        assert_status(&cpu, FLAG_CARRY);
+    }
 
 }
