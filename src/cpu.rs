@@ -242,6 +242,22 @@ impl CPU {
         }
     }
 
+    fn bmi(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+
+        if self.status & FLAG_NEGATIVE != 0 {
+            self.program_counter = addr;
+        }
+    }
+
+    fn bpl(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+
+        if self.status & FLAG_NEGATIVE == 0 {
+            self.program_counter = addr;
+        }
+    }
+
     fn bne(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
 
@@ -462,6 +478,18 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // BPL
+                0x10 => {
+                    self.bpl(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
+                // BMI
+                0x30 => {
+                    self.bmi(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
                 // BIT
                 0x24 => {
                     self.bit(&AddressingMode::ZeroPage);
@@ -1419,6 +1447,45 @@ mod test {
         assert_status(&cpu, FLAG_OVERFLOW);
     }
 
+    // BMI
+    #[test]
+    fn test_bmi() {
+        let cpu = run(vec![0x30, 0x02, 0x00, 0x00, 0xE8, 0x00], |_| {});
 
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+        assert_status(&cpu, 0);
+    }
 
+    #[test]
+    fn test_bmi_with_negative_flag() {
+        let cpu = run(vec![0x30, 0x02, 0x00, 0x00, 0xE8, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, 0);
+    }
+
+    // BPL
+    #[test]
+    fn test_bpl() {
+        let cpu = run(vec![0x10, 0x02, 0x00, 0x00, 0xE8, 0x00], |_| {});
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_bpl_with_negative_flag() {
+        let cpu = run(vec![0x10, 0x02, 0x00, 0x00, 0xE8, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
 }
