@@ -217,6 +217,22 @@ impl CPU {
         }
     }
 
+    fn beq(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+
+        if self.status & FLAG_ZERO != 0 {
+            self.program_counter = addr;
+        }
+    }
+
+    fn bne(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+
+        if self.status & FLAG_ZERO == 0 {
+            self.program_counter = addr;
+        }
+    }
+
     fn adc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
@@ -427,6 +443,18 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // BEQ
+                0xF0 => {
+                    self.beq(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
+                // BNE
+                0xD0 => {
+                    self.bne(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
                 // BCC
                 0x90 => {
                     self.bcc(&AddressingMode::Relative);
@@ -1284,5 +1312,50 @@ mod test {
         assert_eq!(cpu.register_x, 0x01);
         assert_eq!(cpu.program_counter, 0x8000);
         assert_status(&cpu, FLAG_CARRY);
+    }
+
+    // BEQ
+
+    #[test]
+    fn test_beq() {
+        let cpu = run(vec![0xF0, 0x02, 0x00, 0x00, 0xE8, 0x00], |_| {});
+
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_beq_with_zero_flag() {
+        let cpu = run(vec![0xF0, 0x02, 0x00, 0x00, 0xE8, 0x00], |cpu| {
+            cpu.status = FLAG_ZERO;
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, 0);
+    }
+
+    // BNE
+    #[test]
+    fn test_bne() {
+        let cpu = run(vec![0xD0, 0x02, 0x00, 0x00, 0xE8, 0x00], |_| {});
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_bne_with_zero_flag() {
+        let cpu = run(vec![0xD0, 0x02, 0x00, 0x00, 0xE8, 0x00], |cpu| {
+            cpu.status = FLAG_ZERO;
+        });
+
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+
+        assert_status(&cpu, FLAG_ZERO);
     }
 }
