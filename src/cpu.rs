@@ -202,6 +202,24 @@ impl CPU {
         }
     }
 
+    // fn brk(&mut self, mode: &AddressingMode) {
+    //     self.program_counter = self.mem_read_u16(0xFFFE);
+    // }
+
+    fn _brach(&mut self, mode: &AddressingMode, flag: u8, zero: bool) {
+        let addr = self.get_operand_address(mode);
+
+        if zero {
+            if self.status & flag == 0 {
+                self.program_counter = addr;
+            }
+        } else {
+            if self.status & flag != 0 {
+                self.program_counter = addr;
+            }
+        }
+    }
+
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
@@ -219,51 +237,70 @@ impl CPU {
     }
 
     fn bcc(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        // let addr = self.get_operand_address(mode);
 
-        if self.status & FLAG_CARRY == 0 {
-            self.program_counter = addr;
-        }
+        // if self.status & FLAG_CARRY == 0 {
+        //     self.program_counter = addr;
+        // }
+
+        self._brach(mode, FLAG_CARRY, true);
+
+
     }
 
     fn bcs(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        // let addr = self.get_operand_address(mode);
 
-        if self.status & FLAG_CARRY != 0 {
-            self.program_counter = addr;
-        }
+        // if self.status & FLAG_CARRY != 0 {
+        //     self.program_counter = addr;
+        // }
+
+        self._brach(mode, FLAG_CARRY, false);
+
     }
 
     fn beq(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        // let addr = self.get_operand_address(mode);
 
-        if self.status & FLAG_ZERO != 0 {
-            self.program_counter = addr;
-        }
+        // if self.status & FLAG_ZERO != 0 {
+        //     self.program_counter = addr;
+        // }
+
+
+        self._brach(mode, FLAG_ZERO, false);
+
     }
 
     fn bmi(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        // let addr = self.get_operand_address(mode);
 
-        if self.status & FLAG_NEGATIVE != 0 {
-            self.program_counter = addr;
-        }
+        // if self.status & FLAG_NEGATIVE != 0 {
+        //     self.program_counter = addr;
+        // }
+        self._brach(mode, FLAG_NEGATIVE, false);
     }
 
     fn bpl(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        // let addr = self.get_operand_address(mode);
 
-        if self.status & FLAG_NEGATIVE == 0 {
-            self.program_counter = addr;
-        }
+        // if self.status & FLAG_NEGATIVE == 0 {
+        //     self.program_counter = addr;
+
+        // }
+        self._brach(mode, FLAG_NEGATIVE, true);
+
     }
 
     fn bne(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
+        // let addr = self.get_operand_address(mode);
 
-        if self.status & FLAG_ZERO == 0 {
-            self.program_counter = addr;
-        }
+        // if self.status & FLAG_ZERO == 0 {
+        //     self.program_counter = addr;
+        // }
+
+        self._brach(mode, FLAG_ZERO, true);
+
+
     }
 
     fn adc(&mut self, mode: &AddressingMode) {
