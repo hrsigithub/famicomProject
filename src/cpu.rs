@@ -119,10 +119,11 @@ impl CPU {
                 deref
             }
 
-            // BCC
+            // BCC *+4 => 90 04
             AddressingMode::Relative => {
                 let base = self.mem_read(self.program_counter);
-                return (base as i8) as u16 + self.program_counter;
+                let np = (base as i8) as i32 + self.program_counter as i32;
+                return np as u16;
             }
 
             AddressingMode::NoneAddressing => {
@@ -1238,6 +1239,18 @@ mod test {
         assert_status(&cpu, FLAG_CARRY);
     }
 
+    #[test]
+    fn test_bcc_negative() {
+        let cpu = run(vec![0x90, 0xFC, 0x00], |cpu| {
+            cpu.mem_write(0x7FFE, 0xE8);
+            cpu.mem_write(0x7FFF, 0x00);
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8000);
+        assert_status(&cpu, 0);
+    }
+
     // BCS
     #[test]
     fn test_bcs() {
@@ -1257,6 +1270,19 @@ mod test {
 
         assert_eq!(cpu.register_x, 0x01);
         assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, FLAG_CARRY);
+    }
+
+    #[test]
+    fn test_bcs_negative() {
+        let cpu = run(vec![0xB0, 0xFC, 0x00], |cpu| {
+            cpu.mem_write(0x7FFE, 0xE8);
+            cpu.mem_write(0x7FFF, 0x00);
+            cpu.status = FLAG_CARRY;
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8000);
         assert_status(&cpu, FLAG_CARRY);
     }
 }
