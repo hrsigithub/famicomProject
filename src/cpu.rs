@@ -64,8 +64,8 @@ impl CPU {
 
     // メモリアドレッシングモード
     fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
-        println!("mode :{:?} ", mode);
-        println!("program_counter: {:?} ", self.program_counter);
+        // println!("mode :{:?} ", mode);
+        // println!("program_counter: {:?} ", self.program_counter);
 
         match mode {
             AddressingMode::Accumulator => {
@@ -185,6 +185,7 @@ impl CPU {
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8) {
+        // A = 0の場合に設定
         self.status = if result == 0 {
             self.status | FLAG_ZERO
         } else {
@@ -199,6 +200,22 @@ impl CPU {
             // ビット7をクリア
             self.status = self.status & !FLAG_NEGATIVE;
         }
+    }
+
+    fn bit(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        let zero = self.register_a & value; // A&M
+
+        if zero == 0 {
+            self.status = self.status | FLAG_ZERO;
+        } else {
+            self.status = self.status & !FLAG_ZERO;
+        }
+
+        let flags = FLAG_NEGATIVE | FLAG_OVERFLOW;
+
+        self.status = (self.status & !flags) | (value & flags);
     }
 
     fn bcc(&mut self, mode: &AddressingMode) {
@@ -409,6 +426,7 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_a);
     }
 
+    // LDA メモリのバイトをアキュムレータにロードし、必要に応じてゼロと負のフラグを設定します。
     fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
@@ -417,6 +435,7 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_a);
     }
 
+    // アキュムレータの内容をメモリに保存します。
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self.mem_write(addr, self.register_a);
@@ -443,6 +462,16 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // BIT
+                0x24 => {
+                    self.bit(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
+                0x2C => {
+                    self.bit(&AddressingMode::Absolute);
+                    self.program_counter += 2;
+                }
+
                 // BEQ
                 0xF0 => {
                     self.beq(&AddressingMode::Relative);
@@ -1358,4 +1387,38 @@ mod test {
 
         assert_status(&cpu, FLAG_ZERO);
     }
+
+    // BIT
+    #[test]
+    fn test_bit() {
+        let cpu = run(vec![0x24, 0x00, 0x00], |cpu| {
+            cpu.register_a = 0x00;
+            cpu.mem_write(0x000, 0x00);
+        });
+
+        assert_status(&cpu, FLAG_ZERO);
+    }
+
+    #[test]
+    fn test_bit_negative_flag() {
+        let cpu = run(vec![0x24, 0x00, 0x00], |cpu| {
+            cpu.register_a = 0x00;
+            cpu.mem_write(0x000, 0x80);
+        });
+
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_ZERO);
+    }
+
+    #[test]
+    fn test_bit_overflow_flag() {
+        let cpu = run(vec![0x24, 0x00, 0x00], |cpu| {
+            cpu.register_a = 0x40;
+            cpu.mem_write(0x000, 0x40);
+        });
+
+        assert_status(&cpu, FLAG_OVERFLOW);
+    }
+
+
+
 }
