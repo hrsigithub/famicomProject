@@ -207,23 +207,32 @@ impl CPU {
         }
     }
 
-    fn brk(&mut self, mode: &AddressingMode) {
-        self.program_counter = self.mem_read_u16(0xFFFE);
-        self.status = self.status | FLAG_BREAK;
-    }
-
-    fn _brach(&mut self, mode: &AddressingMode, flag: u8, zero: bool) {
+    fn _brach(&mut self, mode: &AddressingMode, flag: u8, non_zero: bool) {
         let addr = self.get_operand_address(mode);
 
-        if zero {
-            if self.status & flag == 0 {
-                self.program_counter = addr;
-            }
-        } else {
+        if non_zero {
             if self.status & flag != 0 {
                 self.program_counter = addr;
             }
+        } else {
+            if self.status & flag == 0 {
+                self.program_counter = addr;
+            }
         }
+    }
+
+    ///////////////
+    fn bvs(&mut self, mode: &AddressingMode) {
+        self._brach(mode, FLAG_OVERFLOW, true);
+    }
+
+    fn bvc(&mut self, mode: &AddressingMode) {
+        self._brach(mode, FLAG_OVERFLOW, false);
+    }
+
+    fn brk(&mut self, mode: &AddressingMode) {
+        self.program_counter = self.mem_read_u16(0xFFFE);
+        self.status = self.status | FLAG_BREAK;
     }
 
     fn bit(&mut self, mode: &AddressingMode) {
@@ -243,62 +252,27 @@ impl CPU {
     }
 
     fn bcc(&mut self, mode: &AddressingMode) {
-        // let addr = self.get_operand_address(mode);
-
-        // if self.status & FLAG_CARRY == 0 {
-        //     self.program_counter = addr;
-        // }
-
-        self._brach(mode, FLAG_CARRY, true);
-    }
-
-    fn bcs(&mut self, mode: &AddressingMode) {
-        // let addr = self.get_operand_address(mode);
-
-        // if self.status & FLAG_CARRY != 0 {
-        //     self.program_counter = addr;
-        // }
-
         self._brach(mode, FLAG_CARRY, false);
     }
 
+    fn bcs(&mut self, mode: &AddressingMode) {
+        self._brach(mode, FLAG_CARRY, true);
+    }
+
     fn beq(&mut self, mode: &AddressingMode) {
-        // let addr = self.get_operand_address(mode);
-
-        // if self.status & FLAG_ZERO != 0 {
-        //     self.program_counter = addr;
-        // }
-
-        self._brach(mode, FLAG_ZERO, false);
+        self._brach(mode, FLAG_ZERO, true);
     }
 
     fn bmi(&mut self, mode: &AddressingMode) {
-        // let addr = self.get_operand_address(mode);
-
-        // if self.status & FLAG_NEGATIVE != 0 {
-        //     self.program_counter = addr;
-        // }
-        self._brach(mode, FLAG_NEGATIVE, false);
-    }
-
-    fn bpl(&mut self, mode: &AddressingMode) {
-        // let addr = self.get_operand_address(mode);
-
-        // if self.status & FLAG_NEGATIVE == 0 {
-        //     self.program_counter = addr;
-
-        // }
         self._brach(mode, FLAG_NEGATIVE, true);
     }
 
+    fn bpl(&mut self, mode: &AddressingMode) {
+        self._brach(mode, FLAG_NEGATIVE, false);
+    }
+
     fn bne(&mut self, mode: &AddressingMode) {
-        // let addr = self.get_operand_address(mode);
-
-        // if self.status & FLAG_ZERO == 0 {
-        //     self.program_counter = addr;
-        // }
-
-        self._brach(mode, FLAG_ZERO, true);
+        self._brach(mode, FLAG_ZERO, false);
     }
 
     fn adc(&mut self, mode: &AddressingMode) {
@@ -513,6 +487,18 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // BVS
+                0x70 => {
+                    self.bvs(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
+                // BVC
+                0x50 => {
+                    self.bvc(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
                 // BPL
                 0x10 => {
                     self.bpl(&AddressingMode::Relative);
@@ -778,14 +764,6 @@ mod test {
 
     #[test]
     fn test_0xaa_tax_move_a_to_x() {
-        // let mut cpu = CPU::new();
-        // cpu.load(vec![0xaa, 0x00]);
-        // cpu.reset();
-
-        // cpu.register_a = 10;
-        // cpu.run();
-        // assert_eq!(cpu.register_x, 10);
-
         let cpu = run(vec![0xaa, 0x00], |cpu| {
             cpu.register_a = 10;
         });
@@ -794,11 +772,6 @@ mod test {
 
     #[test]
     fn test_5_ops_working_together() {
-        // let mut cpu = CPU::new();
-        // cpu.load_and_run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
-
-        // assert_eq!(cpu.register_x, 0xc1);
-
         let cpu = run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00], |_| {});
         assert_eq!(cpu.register_x, 0xc1);
     }
@@ -811,7 +784,6 @@ mod test {
         cpu.reset();
 
         cpu.register_x = 0xff;
-        //        cpu.load_and_run(vec![0xe8, 0xe8, 0x00]);
         cpu.run();
 
         assert_eq!(cpu.register_x, 1);
@@ -1526,4 +1498,45 @@ mod test {
         assert_eq!(cpu.program_counter, 0x8003);
         assert_status(&cpu, FLAG_NEGATIVE);
     }
+
+    // BVC
+    #[test]
+    fn test_bvc() {
+        let cpu = run(vec![0x50, 0x02, 0x00, 0x00, 0xE8, 0x00], |_| {});
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_bvc_with_overflow_flag() {
+        let cpu = run(vec![0x50, 0x02, 0x00, 0x00, 0xE8, 0x00], |cpu| {
+            cpu.status = FLAG_OVERFLOW;
+        });
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+        assert_status(&cpu, FLAG_OVERFLOW);
+    }
+
+    // BVS
+    #[test]
+    fn test_bvs() {
+        let cpu = run(vec![0x70, 0x02, 0x00, 0x00, 0xE8, 0x00], |_| {});
+
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_bvs_with_overflow_flag() {
+        let cpu = run(vec![0x70, 0x02, 0x00, 0x00, 0xE8, 0x00], |cpu| {
+            cpu.status = FLAG_OVERFLOW;
+        });
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu, FLAG_OVERFLOW);
+    }
+
 }
