@@ -22,7 +22,7 @@ pub enum AddressingMode {
 
 const FLAG_CARRY: u8 = 1 << 0;
 const FLAG_ZERO: u8 = 1 << 1;
-const FLAG_INTERRRUPT: u8 = 1 << 2;
+const FLAG_INTERRUPT: u8 = 1 << 2;
 const FLAG_DECIMAL: u8 = 1 << 3;
 const FLAG_BREAK: u8 = 1 << 4;
 const FLAG_BREAK2: u8 = 1 << 5; // 5 は未使用。
@@ -222,6 +222,30 @@ impl CPU {
     }
 
     ///////////////
+    fn sei(&mut self, mode: &AddressingMode) {
+        self.status = self.status | FLAG_INTERRUPT
+    }
+
+    fn cli(&mut self, mode: &AddressingMode) {
+        self.status = self.status & !FLAG_INTERRUPT
+    }
+
+    fn sed(&mut self, mode: &AddressingMode) {
+        self.status = self.status | FLAG_DECIMAL
+    }
+
+    fn cld(&mut self, mode: &AddressingMode) {
+        self.status = self.status & !FLAG_DECIMAL
+    }
+
+    fn sec(&mut self, mode: &AddressingMode) {
+        self.status = self.status | FLAG_CARRY
+    }
+
+    fn clc(&mut self, mode: &AddressingMode) {
+        self.status = self.status & !FLAG_CARRY
+    }
+
     fn bvs(&mut self, mode: &AddressingMode) {
         self._brach(mode, FLAG_OVERFLOW, true);
     }
@@ -487,6 +511,37 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+
+                // SEI
+                0x78 => {
+                    self.sei(&AddressingMode::Implied);
+                }
+
+                // CLI
+                0x58 => {
+                    self.cli(&AddressingMode::Implied);
+                }
+
+                // SED
+                0xF8 => {
+                    self.sed(&AddressingMode::Implied);
+                }
+
+                // CLD
+                0xD8 => {
+                    self.cld(&AddressingMode::Implied);
+                }
+
+                // SEC
+                0x38 => {
+                    self.sec(&AddressingMode::Implied);
+                }
+
+                // CLC
+                0x18 => {
+                    self.clc(&AddressingMode::Implied);
+                }
+
                 // BVS
                 0x70 => {
                     self.bvs(&AddressingMode::Relative);
@@ -1538,5 +1593,67 @@ mod test {
         assert_eq!(cpu.program_counter, 0x8006);
         assert_status(&cpu, FLAG_OVERFLOW);
     }
+
+    // CLC
+    #[test]
+    fn test_clc() {
+        let cpu = run(vec![0x18, 0x00], |cpu| {
+            cpu.status = FLAG_CARRY | FLAG_NEGATIVE;
+        });
+
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // SEC
+    #[test]
+    fn test_sec() {
+        let cpu = run(vec![0x38, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_CARRY);
+    }
+
+    // CLD
+    #[test]
+    fn test_cld() {
+        let cpu = run(vec![0xD8, 0x00], |cpu| {
+            cpu.status = FLAG_CARRY | FLAG_NEGATIVE | FLAG_DECIMAL;
+        });
+
+        assert_status(&cpu, FLAG_CARRY | FLAG_NEGATIVE);
+    }
+
+    // SED
+    #[test]
+    fn test_sed() {
+        let cpu = run(vec![0xF8, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_DECIMAL);
+    }
+
+    // CLI
+    #[test]
+    fn test_cli() {
+        let cpu = run(vec![0x58, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE | FLAG_DECIMAL | FLAG_INTERRUPT;
+        });
+
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_DECIMAL);
+    }
+
+    // SEI
+    #[test]
+    fn test_sei() {
+        let cpu = run(vec![0x78, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_INTERRUPT);
+    }
+
+
 
 }
