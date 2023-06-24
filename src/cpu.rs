@@ -16,6 +16,7 @@ pub enum AddressingMode {
     Indirect_X,
     Indirect_Y,
     Relative,
+    Implied,
     NoneAddressing,
 }
 
@@ -68,6 +69,10 @@ impl CPU {
         // println!("program_counter: {:?} ", self.program_counter);
 
         match mode {
+            AddressingMode::Implied => {
+                panic!("mode {:?} is not supported", mode);
+            }
+
             AddressingMode::Accumulator => {
                 panic!("mode {:?} is not supported", mode);
             }
@@ -202,9 +207,10 @@ impl CPU {
         }
     }
 
-    // fn brk(&mut self, mode: &AddressingMode) {
-    //     self.program_counter = self.mem_read_u16(0xFFFE);
-    // }
+    fn brk(&mut self, mode: &AddressingMode) {
+        self.program_counter = self.mem_read_u16(0xFFFE);
+        self.status = self.status | FLAG_BREAK;
+    }
 
     fn _brach(&mut self, mode: &AddressingMode, flag: u8, zero: bool) {
         let addr = self.get_operand_address(mode);
@@ -244,8 +250,6 @@ impl CPU {
         // }
 
         self._brach(mode, FLAG_CARRY, true);
-
-
     }
 
     fn bcs(&mut self, mode: &AddressingMode) {
@@ -256,7 +260,6 @@ impl CPU {
         // }
 
         self._brach(mode, FLAG_CARRY, false);
-
     }
 
     fn beq(&mut self, mode: &AddressingMode) {
@@ -266,9 +269,7 @@ impl CPU {
         //     self.program_counter = addr;
         // }
 
-
         self._brach(mode, FLAG_ZERO, false);
-
     }
 
     fn bmi(&mut self, mode: &AddressingMode) {
@@ -288,7 +289,6 @@ impl CPU {
 
         // }
         self._brach(mode, FLAG_NEGATIVE, true);
-
     }
 
     fn bne(&mut self, mode: &AddressingMode) {
@@ -299,8 +299,6 @@ impl CPU {
         // }
 
         self._brach(mode, FLAG_ZERO, true);
-
-
     }
 
     fn adc(&mut self, mode: &AddressingMode) {
@@ -702,8 +700,11 @@ impl CPU {
                 // INX (0xE8)オペコード
                 0xE8 => self.inx(),
 
-                // BRK(0x00)オペコード
-                0x00 => return,
+                // BRK
+                0x00 => {
+                    //self.brk(&AddressingMode::Implied);
+                    break;
+                }
 
                 _ => todo!(),
             }
