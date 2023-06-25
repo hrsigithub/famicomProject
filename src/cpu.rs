@@ -305,10 +305,36 @@ impl CPU {
     pub fn pla(&mut self, mode: &AddressingMode) {}
     pub fn pha(&mut self, mode: &AddressingMode) {}
     pub fn nop(&mut self, mode: &AddressingMode) {}
-    pub fn ldy(&mut self, mode: &AddressingMode) {}
-    pub fn ldx(&mut self, mode: &AddressingMode) {}
-    // pub fn lda(&mut self, mode: &AddressingMode) {}
-    pub fn rts(&mut self, mode: &AddressingMode) {}
+
+    pub fn ldy(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.register_y = value;
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    pub fn ldx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.register_x = value;
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    // LDA メモリのバイトをアキュムレータにロードし、必要に応じてゼロと負のフラグを設定します。
+    pub fn lda(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.register_a = value;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    pub fn rts(&mut self, mode: &AddressingMode) {
+        let value = self._pop_u16();
+        self.program_counter = value;
+    }
 
     pub fn jsr(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -644,15 +670,6 @@ impl CPU {
             self.status & !FLAG_OVERFLOW
         };
 
-        self.update_zero_and_negative_flags(self.register_a);
-    }
-
-    // LDA メモリのバイトをアキュムレータにロードし、必要に応じてゼロと負のフラグを設定します。
-    pub fn lda(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let value = self.mem_read(addr);
-
-        self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
@@ -1794,5 +1811,65 @@ mod test {
         assert_eq!(cpu.program_counter, 0x4032);
         assert_eq!(cpu.stack_pointer, 0xFD);
         assert_eq!(cpu.mem_read_u16(0x01FE), 0x8003);
+    }
+
+    // RTS
+    #[test]
+    fn test_rts() {
+        let cpu = run(vec![0x60, 0x00], |cpu| {
+            cpu.mem_write(0x01FF, 0x05);
+            cpu.mem_write(0x01FE, 0x06); // 🐚
+
+            cpu.mem_write(0x0506, 0xE8);
+            cpu.mem_write(0x0507, 0x00);
+
+            cpu.stack_pointer = 0xFD;
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x0508);
+        assert_eq!(cpu.stack_pointer, 0xFF);
+
+        assert_eq!(cpu.mem_read_u16(0x01FE), 0x0506);
+    }
+
+    // JSR & RTS
+    #[test]
+    fn test_jsr_and_rts() {
+        let cpu = run(vec![0x20, 0x30, 0x40, 0x00], |cpu| {
+            cpu.mem_write(0x4030, 0xe8);
+            cpu.mem_write(0x4031, 0x60); // RTS
+            cpu.mem_write(0x4032, 0x00);
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x8004);
+        assert_eq!(cpu.stack_pointer, 0xFF);
+
+        assert_eq!(cpu.mem_read_u16(0x01FE), 0x8003);
+    }
+
+    // LDX
+    #[test]
+    fn test_ldx() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xa2, 0x05, 0x00]);
+
+        assert_eq!(cpu.register_x, 0x05);
+        assert!(cpu.status & 0b0000_0010 == 0b0000_0000);
+        assert!(cpu.status & 0b1000_0000 == 0b0000_0000);
+    }
+
+    // LDY
+    #[test]
+    fn test_ldy() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xa0, 0x05, 0x00]);
+
+        assert_eq!(cpu.register_y, 0x05);
+        assert!(cpu.status & 0b0000_0010 == 0b0000_0000);
+        assert!(cpu.status & 0b1000_0000 == 0b0000_0000);
     }
 }
