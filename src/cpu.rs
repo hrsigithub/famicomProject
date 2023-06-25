@@ -222,6 +222,45 @@ impl CPU {
     }
 
     ///////////////
+
+    fn iny(&mut self, mode: &AddressingMode) {
+        self.register_y = self.register_y.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    fn inx(&mut self) {
+        self.register_x = self.register_x.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    fn inc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        let (value, _) = value.overflowing_add(1);
+
+        self.mem_write(addr, value);
+        self.update_zero_and_negative_flags(value);
+    }
+
+    fn dey(&mut self) {
+        self.register_y = self.register_y.wrapping_sub(1);
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    fn dex(&mut self, mode: &AddressingMode) {
+        self.register_x = self.register_x.wrapping_sub(1);
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    fn dec(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        let (value, _) = value.overflowing_sub(1);
+
+        self.mem_write(addr, value);
+        self.update_zero_and_negative_flags(value);
+    }
+
     fn cpy(&mut self, mode: &AddressingMode) {
         self._cmp(self.register_y, mode)
     }
@@ -526,13 +565,6 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_x);
     }
 
-    fn inx(&mut self) {
-        // オーバーフロー対応
-        self.register_x = self.register_x.wrapping_add(1);
-
-        self.update_zero_and_negative_flags(self.register_x);
-    }
-
     pub fn run(&mut self) {
         loop {
             // let opscode = self.mem_read(self.program_counter);
@@ -542,6 +574,40 @@ impl CPU {
             println!("code:{:X}", code);
 
             match code {
+                // INX (0xE8)オペコード
+                // 0xE8 => self.inx(),
+
+                // INY
+                0xC8 => {
+                    self.iny(&AddressingMode::Implied);
+                }
+
+                // INX
+                0xE8 => {
+                    self.inx();
+                }
+
+                // INC
+                0xE6 => {
+                    self.inc(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
+
+                // DEY
+                0x88 => {
+                    self.dey();
+                }
+
+                // DEX
+                0xCA => {
+                    self.dex(&AddressingMode::Implied);
+                }
+
+                // DEC
+                0xC6 => {
+                    self.dec(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
 
                 // CPY
                 0xC0 => {
@@ -792,9 +858,6 @@ impl CPU {
                 // TAX (0xAA)オペコード
                 0xAA => self.tax(),
 
-                // INX (0xE8)オペコード
-                0xE8 => self.inx(),
-
                 // BRK
                 0x00 => {
                     //self.brk(&AddressingMode::Implied);
@@ -885,18 +948,18 @@ mod test {
         assert_eq!(cpu.register_x, 0xc1);
     }
 
-    #[test]
-    fn test_inx_overflow() {
-        let mut cpu = CPU::new();
+    // #[test]
+    // fn test_inx_overflow() {
+    //     let mut cpu = CPU::new();
 
-        cpu.load(vec![0xe8, 0xe8, 0x00]);
-        cpu.reset();
+    //     cpu.load(vec![0xe8, 0xe8, 0x00]);
+    //     cpu.reset();
 
-        cpu.register_x = 0xff;
-        cpu.run();
+    //     cpu.register_x = 0xff;
+    //     cpu.run();
 
-        assert_eq!(cpu.register_x, 1);
-    }
+    //     assert_eq!(cpu.register_x, 1);
+    // }
 
     #[test]
     fn test_lda_from_memory_zero_page() {
@@ -1721,7 +1784,7 @@ mod test {
     // CMP
     #[test]
     fn test_cmp() {
-        let cpu = run(vec![0xC9, 0x01], |cpu| {
+        let cpu = run(vec![0xC9, 0x01, 0x00], |cpu| {
             cpu.register_a = 0x02;
         });
 
@@ -1730,7 +1793,7 @@ mod test {
 
     #[test]
     fn test_cmp_eq() {
-        let cpu = run(vec![0xC9, 0x02], |cpu| {
+        let cpu = run(vec![0xC9, 0x02, 0x00], |cpu| {
             cpu.register_a = 0x02;
         });
 
@@ -1739,7 +1802,7 @@ mod test {
 
     #[test]
     fn test_cmp_negative() {
-        let cpu = run(vec![0xC9, 0x03], |cpu| {
+        let cpu = run(vec![0xC9, 0x03, 0x00], |cpu| {
             cpu.register_a = 0x02;
         });
 
@@ -1749,7 +1812,7 @@ mod test {
     // CPX
     #[test]
     fn test_cpx() {
-        let cpu = run(vec![0xE0, 0x01], |cpu| {
+        let cpu = run(vec![0xE0, 0x01, 0x00], |cpu| {
             cpu.register_x = 0x02;
         });
 
@@ -1759,11 +1822,136 @@ mod test {
     // CPY
     #[test]
     fn test_cpy() {
-        let cpu = run(vec![0xC0, 0x01], |cpu| {
+        let cpu = run(vec![0xC0, 0x01, 0x00], |cpu| {
             cpu.register_y = 0x02;
         });
 
         assert_status(&cpu, FLAG_CARRY);
     }
 
+    // DEC
+    #[test]
+    fn test_dec() {
+        let cpu = run(vec![0xC6, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x01, 0x05);
+        });
+
+        assert_eq!(cpu.mem_read(0x0001), 0x05 - 1);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_dec_overflow() {
+        let cpu = run(vec![0xC6, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x01, 0x00);
+        });
+
+        assert_eq!(cpu.mem_read(0x0001), 0xFF);
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // DEX
+    #[test]
+    fn test_dex() {
+        let cpu = run(vec![0xCA, 0x00], |cpu| {
+            cpu.register_x = 0x05;
+        });
+
+        assert_eq!(cpu.register_x, 0x05 - 1);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_dex_overflow() {
+        let cpu = run(vec![0xCA, 0x00], |cpu| {
+            cpu.register_x = 0x00;
+        });
+
+        assert_eq!(cpu.register_x, 0xFF);
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // DEY
+    #[test]
+    fn test_dey() {
+        let cpu = run(vec![0x88, 0x00], |cpu| {
+            cpu.register_y = 0x05;
+        });
+
+        assert_eq!(cpu.register_y, 0x05 - 1);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_dey_overflow() {
+        let cpu = run(vec![0x88, 0x00], |cpu| {
+            cpu.register_y = 0x00;
+        });
+
+        assert_eq!(cpu.register_y, 0xFF);
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // INC
+    #[test]
+    fn test_inc() {
+        let cpu = run(vec![0xE6, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x01, 0x05);
+        });
+
+        assert_eq!(cpu.mem_read(0x0001), 0x05 + 1);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_inc_overflow() {
+        let cpu = run(vec![0xE6, 0x01, 0x00], |cpu| {
+            cpu.mem_write(0x01, 0xFF);
+        });
+
+        assert_eq!(cpu.mem_read(0x0001), 0x00);
+        assert_status(&cpu, FLAG_ZERO);
+    }
+
+    // INX
+    #[test]
+    fn test_inx() {
+        let cpu = run(vec![0xE8, 0x00], |cpu| {
+            cpu.register_x = 0x05;
+        });
+
+        assert_eq!(cpu.register_x, 0x05 + 1);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_inx_overflow() {
+        let cpu = run(vec![0xE8, 0x00], |cpu| {
+            cpu.register_x = 0xFF;
+        });
+
+        assert_eq!(cpu.register_x, 0x00);
+        assert_status(&cpu, FLAG_ZERO);
+    }
+
+    // INY
+    #[test]
+    fn test_iny() {
+        let cpu = run(vec![0xC8, 0x00], |cpu| {
+            cpu.register_y = 0x05;
+        });
+
+        assert_eq!(cpu.register_y, 0x05 + 1);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_iny_overflow() {
+        let cpu = run(vec![0xC8, 0x00], |cpu| {
+            cpu.register_y = 0xFF;
+        });
+
+        assert_eq!(cpu.register_y, 0x00);
+        assert_status(&cpu, FLAG_ZERO);
+    }
 }
