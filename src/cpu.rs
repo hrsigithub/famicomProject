@@ -72,6 +72,8 @@ pub struct CPU {
     // プログラム カウンター
     pub program_counter: u16, // 2Byte
 
+    pub stack_pointer: u8,
+
     // メモリー
     pub memory: [u8; 0x10000],
 }
@@ -84,6 +86,7 @@ impl CPU {
             register_y: 0,
             status: 0,
             program_counter: 0,
+            stack_pointer: 0xFF,
             memory: [0x00; 0x10000],
         }
     }
@@ -175,7 +178,7 @@ impl CPU {
     }
 
     // リトルエンディアン アドレス指定
-    fn mem_read_u16(&mut self, pos: u16) -> u16 {
+    pub fn mem_read_u16(&self, pos: u16) -> u16 {
         let lo = self.mem_read(pos) as u16;
         let hi = self.mem_read(pos + 1) as u16;
         (hi << 8) | (lo as u16)
@@ -196,18 +199,19 @@ impl CPU {
 
     // すべてのレジスタの状態を復元し、0xFFFC に格納されている2バイトの値で
     // プログラム カウンタを初期化する必要があります
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         self.register_a = 0;
         self.register_x = 0;
         self.register_y = 0;
         self.status = 0;
+        self.stack_pointer = 0xFF;
 
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
 
     // 0x8000 から、カトリッジのデータをロード
     // プログラムを PRG ROM 空間にロードし、コードへの参照を 0xFFFC メモリ セルに保存する必要がある。
-    pub fn load(&mut self, program: Vec<u8>) {
+    fn load(&mut self, program: Vec<u8>) {
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
         self.mem_write_u16(0xFFFC, 0x8000);
     }
@@ -254,7 +258,65 @@ impl CPU {
         }
     }
 
-    ///////////////
+    //  ロード、リセット、実行
+    fn load_and_run(&mut self, program: Vec<u8>) {
+        self.load(program);
+        self.reset();
+        self.run();
+    }
+
+    pub fn _push(&mut self, value: u8) {
+        let addr = 0x0100 + self.stack_pointer as u16;
+        self.mem_write(addr, value);
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+    }
+
+    pub fn _pop(&mut self) -> u8 {
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        let addr = 0x0100 + self.stack_pointer as u16;
+        self.mem_read(addr)
+    }
+
+    pub fn _push_u16(&mut self, value: u16) {
+        let addr = 0x0100 + self.stack_pointer.wrapping_sub(1) as u16;
+        self.mem_write_u16(addr, value);
+        self.stack_pointer = self.stack_pointer.wrapping_sub(2);
+    }
+
+    pub fn _pop_u16(&mut self) -> u16 {
+        let addr = 0x0100 + self.stack_pointer.wrapping_add(1) as u16;
+        let value = self.mem_read_u16(addr);
+        self.stack_pointer = self.stack_pointer.wrapping_add(2);
+        value
+    }
+
+    pub fn txs(&mut self, mode: &AddressingMode) {}
+    pub fn tsx(&mut self, mode: &AddressingMode) {}
+    pub fn tya(&mut self, mode: &AddressingMode) {}
+    pub fn tay(&mut self, mode: &AddressingMode) {}
+    pub fn txa(&mut self, mode: &AddressingMode) {}
+    // pub fn tax(&mut self, mode: &AddressingMode) {}
+    pub fn sty(&mut self, mode: &AddressingMode) {}
+    pub fn stx(&mut self, mode: &AddressingMode) {}
+    // pub fn sta(&mut self, mode: &AddressingMode) {}
+    pub fn rti(&mut self, mode: &AddressingMode) {}
+    pub fn plp(&mut self, mode: &AddressingMode) {}
+    pub fn php(&mut self, mode: &AddressingMode) {}
+    pub fn pla(&mut self, mode: &AddressingMode) {}
+    pub fn pha(&mut self, mode: &AddressingMode) {}
+    pub fn nop(&mut self, mode: &AddressingMode) {}
+    pub fn ldy(&mut self, mode: &AddressingMode) {}
+    pub fn ldx(&mut self, mode: &AddressingMode) {}
+    // pub fn lda(&mut self, mode: &AddressingMode) {}
+    pub fn rts(&mut self, mode: &AddressingMode) {}
+
+    pub fn jsr(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self._push_u16(self.program_counter + 2);
+
+        self.program_counter = addr;
+        self.program_counter -= 2;
+    }
 
     pub fn jmp(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -623,345 +685,6 @@ impl CPU {
                 }
             }
         }
-    }
-    pub fn txs(&mut self, mode: &AddressingMode) {}
-    pub fn tsx(&mut self, mode: &AddressingMode) {}
-    pub fn tya(&mut self, mode: &AddressingMode) {}
-    pub fn tay(&mut self, mode: &AddressingMode) {}
-    pub fn txa(&mut self, mode: &AddressingMode) {}
-    // pub fn tax(&mut self, mode: &AddressingMode) {}
-    pub fn sty(&mut self, mode: &AddressingMode) {}
-    pub fn stx(&mut self, mode: &AddressingMode) {}
-    // pub fn sta(&mut self, mode: &AddressingMode) {}
-    pub fn rti(&mut self, mode: &AddressingMode) {}
-    pub fn plp(&mut self, mode: &AddressingMode) {}
-    pub fn php(&mut self, mode: &AddressingMode) {}
-    pub fn pla(&mut self, mode: &AddressingMode) {}
-    pub fn pha(&mut self, mode: &AddressingMode) {}
-    pub fn nop(&mut self, mode: &AddressingMode) {}
-    pub fn ldy(&mut self, mode: &AddressingMode) {}
-    pub fn ldx(&mut self, mode: &AddressingMode) {}
-    // pub fn lda(&mut self, mode: &AddressingMode) {}
-    pub fn rts(&mut self, mode: &AddressingMode) {}
-    pub fn jsr(&mut self, mode: &AddressingMode) {}
-
-    // pub fn run(&mut self) {
-    //     loop {
-    //         let code = self.mem_read(self.program_counter);
-    //         self.program_counter += 1;
-
-    //         println!("code:{:X}", code);
-
-    //         match code {
-    //             // JMP
-    //             0x6C => {
-    //                 self.jmp(&AddressingMode::Indirect);
-    //                 // この後program_counterのインクリメントはしない。
-    //             }
-    //             0x4C => {
-    //                 self.jmp(&AddressingMode::Absolute);
-    //                 // この後program_counterのインクリメントはしない。
-    //             }
-
-    //             // INY
-    //             0xC8 => {
-    //                 self.iny(&AddressingMode::Implied);
-    //             }
-
-    //             // INX
-    //             0xE8 => {
-    //                 self.inx();
-    //             }
-
-    //             // INC
-    //             0xE6 => {
-    //                 self.inc(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // DEY
-    //             0x88 => {
-    //                 self.dey();
-    //             }
-
-    //             // DEX
-    //             0xCA => {
-    //                 self.dex(&AddressingMode::Implied);
-    //             }
-
-    //             // DEC
-    //             0xC6 => {
-    //                 self.dec(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // CPY
-    //             0xC0 => {
-    //                 self.cpy(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // CPX
-    //             0xE0 => {
-    //                 self.cpx(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // CMP
-    //             0xC9 => {
-    //                 self.cmp(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // CLV
-    //             0xB8 => {
-    //                 self.clv(&AddressingMode::Implied);
-    //             }
-
-    //             // SEI
-    //             0x78 => {
-    //                 self.sei(&AddressingMode::Implied);
-    //             }
-
-    //             // CLI
-    //             0x58 => {
-    //                 self.cli(&AddressingMode::Implied);
-    //             }
-
-    //             // SED
-    //             0xF8 => {
-    //                 self.sed(&AddressingMode::Implied);
-    //             }
-
-    //             // CLD
-    //             0xD8 => {
-    //                 self.cld(&AddressingMode::Implied);
-    //             }
-
-    //             // SEC
-    //             0x38 => {
-    //                 self.sec(&AddressingMode::Implied);
-    //             }
-
-    //             // CLC
-    //             0x18 => {
-    //                 self.clc(&AddressingMode::Implied);
-    //             }
-
-    //             // BVS
-    //             0x70 => {
-    //                 self.bvs(&AddressingMode::Relative);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // BVC
-    //             0x50 => {
-    //                 self.bvc(&AddressingMode::Relative);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // BPL
-    //             0x10 => {
-    //                 self.bpl(&AddressingMode::Relative);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // BMI
-    //             0x30 => {
-    //                 self.bmi(&AddressingMode::Relative);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // BIT
-    //             0x24 => {
-    //                 self.bit(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-    //             0x2C => {
-    //                 self.bit(&AddressingMode::Absolute);
-    //                 self.program_counter += 2;
-    //             }
-
-    //             // BEQ
-    //             0xF0 => {
-    //                 self.beq(&AddressingMode::Relative);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // BNE
-    //             0xD0 => {
-    //                 self.bne(&AddressingMode::Relative);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // BCC
-    //             0x90 => {
-    //                 self.bcc(&AddressingMode::Relative);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // BCS
-    //             0xB0 => {
-    //                 self.bcs(&AddressingMode::Relative);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // ROR
-    //             0x6A => {
-    //                 self.ror(&AddressingMode::Accumulator);
-    //             }
-
-    //             0x66 => {
-    //                 self.ror(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // ROL
-    //             0x2A => {
-    //                 self.rol(&AddressingMode::Accumulator);
-    //             }
-
-    //             0x26 => {
-    //                 self.rol(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // LSR
-    //             0x4A => {
-    //                 self.lsr(&AddressingMode::Accumulator);
-    //             }
-
-    //             0x46 => {
-    //                 self.lsr(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // ASL
-    //             0x0A => {
-    //                 self.asl(&AddressingMode::Accumulator);
-    //             }
-
-    //             0x06 => {
-    //                 self.asl(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // ADC
-    //             0x69 => {
-    //                 self.adc(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // AND
-    //             0x29 => {
-    //                 self.and(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // EOR
-    //             0x49 => {
-    //                 self.eor(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // ORA
-    //             0x09 => {
-    //                 self.ora(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // SBC
-    //             0xE9 => {
-    //                 self.sbc(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // LDA (0xA9)オペコード
-    //             0xA9 => {
-    //                 self.lda(&AddressingMode::Immediate);
-    //                 self.program_counter += 1;
-    //             }
-    //             0xA5 => {
-    //                 self.lda(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-    //             0xB5 => {
-    //                 self.lda(&AddressingMode::ZeroPage_X);
-    //                 self.program_counter += 1;
-    //             }
-    //             0xAD => {
-    //                 self.lda(&AddressingMode::Absolute);
-    //                 self.program_counter += 2;
-    //             }
-    //             0xBD => {
-    //                 self.lda(&AddressingMode::Absolute_X);
-    //                 self.program_counter += 2;
-    //             }
-    //             0xB9 => {
-    //                 self.lda(&AddressingMode::Absolute_Y);
-    //                 self.program_counter += 2;
-    //             }
-
-    //             0xA1 => {
-    //                 self.lda(&AddressingMode::Indirect_X);
-    //                 self.program_counter += 1;
-    //             }
-    //             0xB1 => {
-    //                 self.lda(&AddressingMode::Indirect_Y);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             /* STA */
-    //             0x85 => {
-    //                 self.sta(&AddressingMode::ZeroPage);
-    //                 self.program_counter += 1;
-    //             }
-    //             0x95 => {
-    //                 self.sta(&AddressingMode::ZeroPage_X);
-    //                 self.program_counter += 1;
-    //             }
-    //             0x8D => {
-    //                 self.sta(&AddressingMode::Absolute);
-    //                 self.program_counter += 2;
-    //             }
-    //             0x9D => {
-    //                 self.sta(&AddressingMode::Absolute_X);
-    //                 self.program_counter += 2;
-    //             }
-    //             0x99 => {
-    //                 self.sta(&AddressingMode::Absolute_Y);
-    //                 self.program_counter += 2;
-    //             }
-    //             0x81 => {
-    //                 self.sta(&AddressingMode::Indirect_X);
-    //                 self.program_counter += 1;
-    //             }
-    //             0x91 => {
-    //                 self.sta(&AddressingMode::Indirect_Y);
-    //                 self.program_counter += 1;
-    //             }
-
-    //             // TAX (0xAA)オペコード
-    //             0xAA => self.tax(),
-
-    //             // BRK
-    //             0x00 => {
-    //                 //self.brk(&AddressingMode::Implied);
-    //                 break;
-    //             }
-
-    //             _ => {
-    //                 println!("まだ実装されていません");
-    //             }
-    //         }
-    //     }
-    // }
-
-    //  ロード、リセット、実行
-    pub fn load_and_run(&mut self, program: Vec<u8>) {
-        self.load(program);
-        self.reset();
-        self.run();
     }
 }
 
@@ -2056,5 +1779,20 @@ mod test {
         assert_eq!(cpu.register_x, 0x01);
         assert_status(&cpu, 0);
         assert_eq!(cpu.program_counter, 0x0203);
+    }
+
+    // JSR
+    #[test]
+    fn test_jsr() {
+        let cpu = run(vec![0x20, 0x30, 0x40, 0x00], |cpu| {
+            cpu.mem_write(0x4030, 0xe8);
+            cpu.mem_write(0x4031, 0x00);
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x4032);
+        assert_eq!(cpu.stack_pointer, 0xFD);
+        assert_eq!(cpu.mem_read_u16(0x01FE), 0x8003);
     }
 }
