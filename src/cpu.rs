@@ -13,6 +13,7 @@ pub enum AddressingMode {
     Absolute,
     Absolute_X,
     Absolute_Y,
+    Indirect,
     Indirect_X,
     Indirect_Y,
     Relative,
@@ -106,6 +107,14 @@ impl CPU {
                 let addr = base.wrapping_add(self.register_y as u16);
                 addr
             }
+
+            // JMP
+            AddressingMode::Indirect => {
+                let base = self.mem_read_u16(self.program_counter);
+                let addr = self.mem_read_u16(base);
+                addr
+            }
+
             AddressingMode::Indirect_X => {
                 let base = self.mem_read(self.program_counter);
 
@@ -222,6 +231,12 @@ impl CPU {
     }
 
     ///////////////
+
+    fn jmp(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.program_counter = addr;
+        // この後program_counterのインクリメントはしない。
+    }
 
     fn iny(&mut self, mode: &AddressingMode) {
         self.register_y = self.register_y.wrapping_add(1);
@@ -567,15 +582,21 @@ impl CPU {
 
     pub fn run(&mut self) {
         loop {
-            // let opscode = self.mem_read(self.program_counter);
             let code = self.mem_read(self.program_counter);
             self.program_counter += 1;
 
             println!("code:{:X}", code);
 
             match code {
-                // INX (0xE8)オペコード
-                // 0xE8 => self.inx(),
+                // JMP
+                0x6C => {
+                    self.jmp(&AddressingMode::Indirect);
+                    // この後program_counterのインクリメントはしない。
+                }
+                0x4C => {
+                    self.jmp(&AddressingMode::Absolute);
+                    // この後program_counterのインクリメントはしない。
+                }
 
                 // INY
                 0xC8 => {
@@ -864,7 +885,9 @@ impl CPU {
                     break;
                 }
 
-                _ => todo!(),
+                _ => {
+                    println!("まだ実装されていません");
+                }
             }
         }
     }
@@ -947,19 +970,6 @@ mod test {
         let cpu = run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00], |_| {});
         assert_eq!(cpu.register_x, 0xc1);
     }
-
-    // #[test]
-    // fn test_inx_overflow() {
-    //     let mut cpu = CPU::new();
-
-    //     cpu.load(vec![0xe8, 0xe8, 0x00]);
-    //     cpu.reset();
-
-    //     cpu.register_x = 0xff;
-    //     cpu.run();
-
-    //     assert_eq!(cpu.register_x, 1);
-    // }
 
     #[test]
     fn test_lda_from_memory_zero_page() {
@@ -1953,5 +1963,33 @@ mod test {
 
         assert_eq!(cpu.register_y, 0x00);
         assert_status(&cpu, FLAG_ZERO);
+    }
+
+    // JMP
+    #[test]
+    fn test_jmp() {
+        let cpu = run(vec![0x4C, 0x30, 0x40, 0x00], |cpu| {
+            cpu.mem_write(0x4030, 0xE8);
+            cpu.mem_write(0x4031, 0x00);
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x4032);
+    }
+
+    #[test]
+    fn test_jmp_indirect() {
+        let cpu = run(vec![0x6C, 0x30, 0x40, 0x00], |cpu| {
+            cpu.mem_write(0x4030, 0x01);
+            cpu.mem_write(0x4031, 0x02);
+
+            cpu.mem_write(0x0201, 0xE8);
+            cpu.mem_write(0x0202, 0x00);
+        });
+
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x0203);
     }
 }
