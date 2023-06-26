@@ -302,9 +302,19 @@ impl CPU {
     pub fn rti(&mut self, mode: &AddressingMode) {}
     pub fn plp(&mut self, mode: &AddressingMode) {}
     pub fn php(&mut self, mode: &AddressingMode) {}
-    pub fn pla(&mut self, mode: &AddressingMode) {}
-    pub fn pha(&mut self, mode: &AddressingMode) {}
-    pub fn nop(&mut self, mode: &AddressingMode) {}
+
+    pub fn pla(&mut self, mode: &AddressingMode) {
+        self.register_a = self._pop();
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    pub fn pha(&mut self, mode: &AddressingMode) {
+        self._push(self.register_a);
+    }
+
+    pub fn nop(&mut self, mode: &AddressingMode) {
+        // なにもしない。
+    }
 
     pub fn ldy(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -728,6 +738,21 @@ mod test {
     fn dump(cpu: &CPU) {
         // ターミナルのバッファを拡張する必要あり。
         for (index, byte) in cpu.memory.iter().enumerate() {
+            print!("{:02X} ", byte);
+            if (index + 1) % 20 == 0 {
+                println!();
+            }
+        }
+        println!();
+    }
+
+    fn dump_offset(cpu: &CPU, offset: &u8) {
+        // ターミナルのバッファを拡張する必要あり。
+        for (index, byte) in cpu.memory.iter().enumerate() {
+            if offset != byte {
+                continue;
+            }
+
             print!("{:02X} ", byte);
             if (index + 1) % 20 == 0 {
                 println!();
@@ -1871,5 +1896,65 @@ mod test {
         assert_eq!(cpu.register_y, 0x05);
         assert!(cpu.status & 0b0000_0010 == 0b0000_0000);
         assert!(cpu.status & 0b1000_0000 == 0b0000_0000);
+    }
+
+    // NOP
+    #[test]
+    fn test_nop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xEA, 0x00]);
+
+        assert_eq!(cpu.program_counter, 0x8002);
+        assert_status(&cpu, 0);
+    }
+
+    // PHA
+    #[test]
+    fn test_pha() {
+        let cpu = run(vec![0x48, 0x00], |cpu| {
+            cpu.register_a = 0x07;
+        });
+
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.register_a, 0x07);
+        assert_eq!(cpu.stack_pointer, 0xFE);
+        // SPは0x01FFから
+        assert_eq!(cpu.mem_read(0x01FF), 0x07);
+    }
+
+    // PLA
+    #[test]
+    fn test_pla() {
+        let cpu = run(vec![0x68, 0x00], |cpu| {
+            cpu.mem_write(0x01FF, 0x07);
+            cpu.stack_pointer = 0xFE;
+        });
+        assert_eq!(cpu.register_a, 0x07);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.stack_pointer, 0xFF);
+    }
+
+    #[test]
+    fn test_pla_zero() {
+        let cpu = run(vec![0x68, 0x00], |cpu| {
+            cpu.mem_write(0x01FF, 0x00);
+            cpu.stack_pointer = 0xFE;
+        });
+        assert_eq!(cpu.register_a, 0x00);
+        assert_status(&cpu, FLAG_ZERO);
+        assert_eq!(cpu.stack_pointer, 0xFF);
+    }
+
+    // PHA & PLA
+    #[test]
+    fn test_pha_and_pla() {
+        let cpu = run(vec![0x48, 0xA9, 0x60, 0x68, 0x00], |cpu| {
+            cpu.register_a = 0x80;
+        });
+        assert_eq!(cpu.register_a, 0x80);
+        assert_status(&cpu, FLAG_NEGATIVE);
+        assert_eq!(cpu.stack_pointer, 0xFF);
+        assert_eq!(cpu.program_counter, 0x8005);
+
     }
 }
