@@ -290,11 +290,31 @@ impl CPU {
         value
     }
 
-    pub fn txs(&mut self, mode: &AddressingMode) {}
-    pub fn tsx(&mut self, mode: &AddressingMode) {}
-    pub fn tya(&mut self, mode: &AddressingMode) {}
-    pub fn tay(&mut self, mode: &AddressingMode) {}
-    pub fn txa(&mut self, mode: &AddressingMode) {}
+////////////
+
+    pub fn txs(&mut self, mode: &AddressingMode) {
+        self.stack_pointer = self.register_x;
+    }
+
+    pub fn tsx(&mut self, mode: &AddressingMode) {
+        self.register_x = self.stack_pointer;
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    pub fn tya(&mut self, mode: &AddressingMode) {
+        self.register_a = self.register_y;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    pub fn tay(&mut self, mode: &AddressingMode) {
+        self.register_y = self.register_a;
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    pub fn txa(&mut self, mode: &AddressingMode) {
+        self.register_a = self.register_x;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
 
     pub fn tax(&mut self, mode: &AddressingMode) {
         self.register_x = self.register_a;
@@ -490,6 +510,7 @@ impl CPU {
     }
 
     pub fn brk(&mut self, mode: &AddressingMode) {
+        
         self.program_counter = self.mem_read_u16(0xFFFE);
         self.status = self.status | FLAG_BREAK;
     }
@@ -2029,6 +2050,61 @@ mod test {
             cpu.register_y = 0xBA;
         });
         assert_eq!(cpu.mem_read(0x10), 0xBA);
+    }
+
+    // TXA
+    #[test]
+    fn test_txa() {
+        let cpu = run(vec![0x8A, 0x00], |cpu| {
+            cpu.register_x = 0x10;
+        });
+        assert_eq!(cpu.register_a, 0x10);
+    }
+
+    // TAY
+    #[test]
+    fn test_tay() {
+        let cpu = run(vec![0xA8, 0x00], |cpu| {
+            cpu.register_a = 0x10;
+        });
+        assert_eq!(cpu.register_y, 0x10);
+    }
+
+    // TYA
+    #[test]
+    fn test_tya() {
+        let cpu = run(vec![0x98, 0x00], |cpu| {
+            cpu.register_y = 0x10;
+        });
+        assert_eq!(cpu.register_a, 0x10);
+    }
+
+    // TSX
+    #[test]
+    fn test_tsx() {
+        let cpu = run(vec![0xBA, 0x00], |cpu| {});
+        assert_eq!(cpu.register_x, 0xFF);
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    #[test]
+    fn test_tsx_same_value() {
+        let cpu = run(vec![0xBA, 0x00], |cpu| {
+            cpu.stack_pointer = 0x75;
+        });
+        assert_eq!(cpu.register_x, 0x75);
+        assert_status(&cpu, 0);
+    }
+
+
+    // TXS
+    #[test]
+    fn test_txs() {
+        let cpu = run(vec![0x9A, 0x00], |cpu| {
+            cpu.register_x = 0x80;
+        });
+        assert_eq!(cpu.stack_pointer, 0x80);
+        assert_status(&cpu, 0);
     }
 
 }
