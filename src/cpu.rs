@@ -173,7 +173,7 @@ impl CPU {
         }
     }
 
-    fn mem_read(&self, addr: u16) -> u8 {
+    pub fn mem_read(&self, addr: u16) -> u8 {
         self.memory[addr as usize]
     }
 
@@ -189,7 +189,7 @@ impl CPU {
     }
 
     // リトルエンディアン アドレス指定
-    fn mem_write_u16(&mut self, pos: u16, data: u16) {
+    pub fn mem_write_u16(&mut self, pos: u16, data: u16) {
         let hi = (data >> 8) as u8;
         let lo = (data & 0xff) as u8;
 
@@ -213,7 +213,7 @@ impl CPU {
     // プログラムを PRG ROM 空間にロードし、コードへの参照を 0xFFFC メモリ セルに保存する必要がある。
     pub fn load(&mut self, program: Vec<u8>) {
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, 0x8000);
+        self.mem_write_u16(0xFFFC, 0x0600);
     }
 
     fn memory_print(&self) {
@@ -745,14 +745,14 @@ impl CPU {
             let opscode = self.mem_read(self.program_counter);
             self.program_counter += 1;
 
-            println!("OPS: {:X}", opscode);
+            println!("OPS: {:02X}", opscode);
 
             for op in CPU_OPS_CODES.iter() {
                 if op.code == opscode {
                     // FIXME FOR TEST
-                    if op.name == "BRK" {
-                        return;
-                    }
+                    // if op.name == "BRK" {
+                    //     return;
+                    // }
                     callback(self);
 
                     call(self, &op);
