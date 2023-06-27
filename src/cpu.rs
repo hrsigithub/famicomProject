@@ -295,13 +295,40 @@ impl CPU {
     pub fn tya(&mut self, mode: &AddressingMode) {}
     pub fn tay(&mut self, mode: &AddressingMode) {}
     pub fn txa(&mut self, mode: &AddressingMode) {}
-    // pub fn tax(&mut self, mode: &AddressingMode) {}
-    pub fn sty(&mut self, mode: &AddressingMode) {}
-    pub fn stx(&mut self, mode: &AddressingMode) {}
-    // pub fn sta(&mut self, mode: &AddressingMode) {}
-    pub fn rti(&mut self, mode: &AddressingMode) {}
-    pub fn plp(&mut self, mode: &AddressingMode) {}
-    pub fn php(&mut self, mode: &AddressingMode) {}
+
+    pub fn tax(&mut self, mode: &AddressingMode) {
+        self.register_x = self.register_a;
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    pub fn sty(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_y);
+    }
+
+    pub fn stx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_x);
+    }
+
+    // アキュムレータの内容をメモリに保存します。
+    pub fn sta(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_a);
+    }
+
+    pub fn rti(&mut self, mode: &AddressingMode) {
+        self.status = self._pop();
+        self.program_counter = self._pop_u16();
+    }
+
+    pub fn plp(&mut self, mode: &AddressingMode) {
+        self.status = self._pop();
+    }
+
+    pub fn php(&mut self, mode: &AddressingMode) {
+        self._push(self.status);
+    }
 
     pub fn pla(&mut self, mode: &AddressingMode) {
         self.register_a = self._pop();
@@ -681,17 +708,6 @@ impl CPU {
         };
 
         self.update_zero_and_negative_flags(self.register_a);
-    }
-
-    // アキュムレータの内容をメモリに保存します。
-    pub fn sta(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        self.mem_write(addr, self.register_a);
-    }
-
-    pub fn tax(&mut self, mode: &AddressingMode) {
-        self.register_x = self.register_a;
-        self.update_zero_and_negative_flags(self.register_x);
     }
 
     fn run(&mut self) {
@@ -1955,6 +1971,64 @@ mod test {
         assert_status(&cpu, FLAG_NEGATIVE);
         assert_eq!(cpu.stack_pointer, 0xFF);
         assert_eq!(cpu.program_counter, 0x8005);
-
     }
+
+    // PHP
+    #[test]
+    fn test_php() {
+        let cpu = run(vec![0x08, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE | FLAG_OVERFLOW;
+        });
+
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_OVERFLOW);
+        assert_eq!(cpu.stack_pointer, 0xFE);
+        // SPは0x01FFから
+        assert_eq!(cpu.mem_read(0x01FF), FLAG_NEGATIVE | FLAG_OVERFLOW);
+    }
+
+    // PLP
+    #[test]
+    fn test_plp() {
+        let cpu = run(vec![0x28, 0x00], |cpu| {
+            // SPに書き込み
+            cpu.mem_write(0x01FF, FLAG_CARRY | FLAG_ZERO);
+            cpu.stack_pointer = 0xFE;
+        });
+        assert_status(&cpu, FLAG_CARRY | FLAG_ZERO);
+        assert_eq!(cpu.stack_pointer, 0xFF);
+    }
+
+    // PHP & PLP
+    #[test]
+    fn test_php_and_plp() {
+        let cpu = run(vec![0x08, 0xa9, 0xF0, 0x28, 0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE | FLAG_OVERFLOW;
+        });
+        assert_eq!(cpu.register_x, 0x00);
+
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_OVERFLOW);
+        assert_eq!(cpu.stack_pointer, 0xFF);
+        assert_eq!(cpu.program_counter, 0x8005);
+    }
+
+    // RTI 保留
+
+    // STX
+    #[test]
+    fn test_stx() {
+        let cpu = run(vec![0x86, 0x10, 0x00], |cpu| {
+            cpu.register_x = 0xBA;
+        });
+        assert_eq!(cpu.mem_read(0x10), 0xBA);
+    }
+
+    // STY
+    #[test]
+    fn test_sty() {
+        let cpu = run(vec![0x84, 0x10, 0x00], |cpu| {
+            cpu.register_y = 0xBA;
+        });
+        assert_eq!(cpu.mem_read(0x10), 0xBA);
+    }
+
 }
