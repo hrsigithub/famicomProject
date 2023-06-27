@@ -199,7 +199,7 @@ impl CPU {
 
     // すべてのレジスタの状態を復元し、0xFFFC に格納されている2バイトの値で
     // プログラム カウンタを初期化する必要があります
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.register_a = 0;
         self.register_x = 0;
         self.register_y = 0;
@@ -211,12 +211,12 @@ impl CPU {
 
     // 0x8000 から、カトリッジのデータをロード
     // プログラムを PRG ROM 空間にロードし、コードへの参照を 0xFFFC メモリ セルに保存する必要がある。
-    fn load(&mut self, program: Vec<u8>) {
+    pub fn load(&mut self, program: Vec<u8>) {
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
         self.mem_write_u16(0xFFFC, 0x8000);
     }
 
-    pub fn memory_print(&self) {
+    fn memory_print(&self) {
         for (index, byte) in self.memory.iter().enumerate() {
             print!("{:02X} ", byte);
             if (index + 1) % 25 == 0 {
@@ -290,7 +290,7 @@ impl CPU {
         value
     }
 
-////////////
+    ////////////
 
     pub fn txs(&mut self, mode: &AddressingMode) {
         self.stack_pointer = self.register_x;
@@ -510,7 +510,9 @@ impl CPU {
     }
 
     pub fn brk(&mut self, mode: &AddressingMode) {
-        
+        // self._push_u16(self.program_counter);
+        // self._push(self.status);
+
         self.program_counter = self.mem_read_u16(0xFFFE);
         self.status = self.status | FLAG_BREAK;
     }
@@ -731,7 +733,14 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_a);
     }
 
-    fn run(&mut self) {
+    pub fn run(&mut self) {
+        self.run_with_callback(|_| {});
+    }
+
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut CPU),
+    {
         loop {
             let opscode = self.mem_read(self.program_counter);
             self.program_counter += 1;
@@ -744,6 +753,8 @@ impl CPU {
                     if op.name == "BRK" {
                         return;
                     }
+                    callback(self);
+
                     call(self, &op);
                     break;
                 }
@@ -2096,7 +2107,6 @@ mod test {
         assert_status(&cpu, 0);
     }
 
-
     // TXS
     #[test]
     fn test_txs() {
@@ -2106,5 +2116,4 @@ mod test {
         assert_eq!(cpu.stack_pointer, 0x80);
         assert_status(&cpu, 0);
     }
-
 }
